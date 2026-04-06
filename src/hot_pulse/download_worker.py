@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -94,7 +93,4 @@ def run_download_worker(config_path: str = "config.yaml") -> None:
 
 
 if __name__ == "__main__":
-    logger.remove()
-    logger.add(sys.stderr, level="INFO", format="{time:HH:mm:ss} | {level} | {message}")
-
     run_download_worker()

@@ -4,7 +4,6 @@ import base64
 import hashlib
 import hmac
 import re
-import sys
 import time
 import urllib.parse
 from pathlib import Path
@@ -129,7 +128,7 @@ def handle_dingtalk_push(task: Task, config: AppConfig) -> dict[str, Any]:
     # 发送钉钉消息
     _send_dingtalk_message(webhook_url, secret, task.title, report_text)
 
-    return {"push_status": "ok"}
+    return {}
 
 
 # ---------------------------------------------------------------------------
@@ -142,7 +141,4 @@ def run_dingtalk_worker(config_path: str = "config.yaml") -> None:
 
 
 if __name__ == "__main__":
-    logger.remove()
-    logger.add(sys.stderr, level="INFO", format="{time:HH:mm:ss} | {level} | {message}")
-
     run_dingtalk_worker()

@@ -77,7 +77,7 @@ STAGE_MAPPING: dict[str, StageConfig] = {
         fail_status="报告推送失败",
         start_field="报告推送开始时间",
         end_field="报告推送完成时间",
-        output_map={"push_status": "推送状态"},
+        output_map={},
         next_type=None,
     ),
 }

@@ -81,6 +81,11 @@ class DingTalkWorkerConfig(WorkerConfig):
     min_interval: int = 120
 
 
+class PatrolWorkerConfig(BaseModel):
+    interval_minutes: int = 60
+    zombie_threshold_minutes: int = 90
+
+
 class SecretConfig(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -106,6 +111,7 @@ class AppConfig(BaseModel):
     transcribe_worker: TranscribeWorkerConfig = TranscribeWorkerConfig()
     analyze_worker: AnalyzeWorkerConfig = AnalyzeWorkerConfig()
     dingtalk_worker: DingTalkWorkerConfig = DingTalkWorkerConfig()
+    patrol_worker: PatrolWorkerConfig = PatrolWorkerConfig()
     secrets: SecretConfig | None = None
 
 

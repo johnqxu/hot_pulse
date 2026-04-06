@@ -159,7 +159,7 @@ if __name__ == "__main__":
     import sys
 
     _logger.remove()
-    _logger.add(sys.stderr, level="INFO", format="{time:HH:mm:ss} | {level} | {message}")
+    _logger.add(sys.stderr, level="INFO", format="{time:HH:mm:ss} | {level} | <bold>[monitor]</bold> {message}")
 
     result = run_monitor()
 

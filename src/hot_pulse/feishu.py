@@ -210,9 +210,9 @@ class FeishuClient:
         data = resp.json()
 
         if data.get("code") != 0:
-            logger.warning(f"飞书更新记录失败: {data.get('msg')} | record_id={record_id}")
+            logger.warning("飞书更新记录失败: {} | record_id={}", data.get("msg"), record_id)
         else:
-            logger.debug(f"飞书更新记录成功: record_id={record_id}")
+            logger.debug("飞书更新记录成功: record_id={}", record_id)
 
     def query_records_by_status(self, status: str, task_type: str) -> list[Task]:
         """按飞书表格"状态"字段查询记录，返回 Task 对象列表。"""

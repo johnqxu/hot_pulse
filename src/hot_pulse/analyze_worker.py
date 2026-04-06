@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import re
-import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -251,7 +250,4 @@ def run_analyze_worker(config_path: str = "config.yaml") -> None:
 
 
 if __name__ == "__main__":
-    logger.remove()
-    logger.add(sys.stderr, level="INFO", format="{time:HH:mm:ss} | {level} | {message}")
-
     run_analyze_worker()

@@ -57,3 +57,7 @@ dingtalk_worker:
   push_endpoint: "tcp://127.0.0.1:5556"
   webhook_url: "https://oapi.dingtalk.com/robot/send?access_token=e5169ce9f64aebba3568ecee93ced5cacc847402e95db840d7c414829f689ccc"  # 钉钉自定义机器人 Webhook 地址
   min_interval: 120
+
+patrol_worker:
+  interval_minutes: 60
+  zombie_threshold_minutes: 90

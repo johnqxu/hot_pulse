@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import subprocess
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -69,7 +68,4 @@ def run_extract_audio_worker(config_path: str = "config.yaml") -> None:
 
 
 if __name__ == "__main__":
-    logger.remove()
-    logger.add(sys.stderr, level="INFO", format="{time:HH:mm:ss} | {level} | {message}")
-
     run_extract_audio_worker()

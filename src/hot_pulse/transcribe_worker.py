@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import sys
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
@@ -233,7 +232,4 @@ def run_transcribe_worker(config_path: str = "config.yaml") -> None:
 
 
 if __name__ == "__main__":
-    logger.remove()
-    logger.add(sys.stderr, level="INFO", format="{time:HH:mm:ss} | {level} | {message}")
-
     run_transcribe_worker()

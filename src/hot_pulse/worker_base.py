@@ -14,6 +14,26 @@ from hot_pulse.zmq_client import ZmqConsumer, ZmqPublisher
 
 WorkerHandler = Callable[[Task, AppConfig], dict[str, Any]]
 
+_WORKER_COLORS: dict[str, str] = {
+    "download": "cyan",
+    "extract_audio": "yellow",
+    "transcribe": "blue",
+    "analyze": "magenta",
+    "dingtalk_push": "red",
+}
+
+
+def _setup_worker_logger(task_type: str) -> None:
+    """为 worker 子进程配置带颜色标识的日志。"""
+    color = _WORKER_COLORS.get(task_type, "white")
+    tag = task_type.replace("_", " ")
+    logger.remove()
+    logger.add(
+        __import__("sys").stderr,
+        level="INFO",
+        format=f"{{time:HH:mm:ss}} | {{level}} | <{color}>[{tag}]</{color}> {{message}}",
+    )
+
 
 def run_worker(
     task_type: str,
@@ -28,6 +48,7 @@ def run_worker(
         config_path: 配置文件路径
     """
     config = load_config(config_path)
+    _setup_worker_logger(task_type)
     worker_cfg = _get_worker_config(config, task_type)
 
     feishu = FeishuClient(config)
