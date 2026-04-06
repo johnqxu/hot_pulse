@@ -1,0 +1,18 @@
+## ADDED Requirements
+
+### Requirement: ZMQ PUSH 客户端初始化
+系统 SHALL 提供 ZMQ 发布者客户端，创建 PUSH socket 并连接到可配置的 TCP 端点。
+
+#### Scenario: 成功初始化
+- **WHEN** 使用有效的端点（如 "tcp://127.0.0.1:5551"）创建 ZMQ 发布者客户端
+- **THEN** 客户端 SHALL 创建 ZMQ PUSH socket 并连接到端点
+- **AND** 调用 send() 传入字典时 SHALL 序列化为 JSON 并通过 socket 发送
+
+#### Scenario: 客户端关闭
+- **WHEN** 调用客户端的 close() 方法
+- **THEN** 客户端 SHALL 关闭 socket 并终止 ZMQ 上下文
+
+#### Scenario: 无活跃连接时发送
+- **WHEN** 下游 PULL socket 未运行
+- **THEN** PUSH 客户端 SHALL NOT 立即抛出错误（ZMQ 会缓冲消息）
+- **AND** 消息 SHALL 在发送端内存缓冲区中排队，直到达到 HWM 上限

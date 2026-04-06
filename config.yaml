@@ -1,0 +1,59 @@
+# Hot Pulse 配置文件
+
+tikhub:
+  base_url: https://api.tikhub.io
+  endpoint: /api/v1/douyin/app/v3/fetch_user_post_videos
+  max_count: 10
+
+feishu:
+  bitable:
+    app_token: SRyowRMvniylPtkVHmockqm6nte    # 从飞书多维表格 URL 中获取
+    table_id: tblubw9XLOmpnK0Q       # 从数据表 URL 参数中获取
+
+creators:
+  - name: 口罩哥
+    sec_uid: MS4wLjABAAAAnKeRN8QUgooS1pPRqOf_N_jnuztzUyocl0_vUndQFJs       # 替换为实际 sec_uid
+  - name: 爽姐
+    sec_uid: MS4wLjABAAAAlXiEFtklUwNXSVABjlGMjik9h2_BuCOPHc-d9K0KO7Q       # 替换为实际 sec_uid
+
+schedule:
+  interval_minutes: 59
+
+zeromq:
+  enabled: true
+  push_endpoint: "tcp://127.0.0.1:5551"
+
+download_worker:
+  pull_endpoint: "tcp://127.0.0.1:5551"
+  push_endpoint: "tcp://127.0.0.1:5552"
+  download_dir: "D:\\batch\\video"
+  url_priority:
+    "*.amemv.com": 10
+    "v26-web.douyinvod.com": 5
+    "v3-search.douyinvod.com": 0
+
+extract_audio_worker:
+  pull_endpoint: "tcp://127.0.0.1:5552"
+  push_endpoint: "tcp://127.0.0.1:5553"
+  audio_dir: "D:\\batch\\audio"
+
+transcribe_worker:
+  pull_endpoint: "tcp://127.0.0.1:5553"
+  push_endpoint: "tcp://127.0.0.1:5554"
+  text_dir: "D:\\batch\\text"
+  model_dir: "D:\\batch\\whisper-model"
+  model_size: "medium"
+  device: "gpu"
+
+analyze_worker:
+  pull_endpoint: "tcp://127.0.0.1:5554"
+  push_endpoint: "tcp://127.0.0.1:5555"
+  report_dir: "D:\\docs\\财经\\02-市场分析\\视频分析报告"
+  model: "glm-5.1"
+  # prompt: ""  # 留空则使用内置默认 prompt
+
+dingtalk_worker:
+  pull_endpoint: "tcp://127.0.0.1:5555"
+  push_endpoint: "tcp://127.0.0.1:5556"
+  webhook_url: "https://oapi.dingtalk.com/robot/send?access_token=e5169ce9f64aebba3568ecee93ced5cacc847402e95db840d7c414829f689ccc"  # 钉钉自定义机器人 Webhook 地址
+  min_interval: 120

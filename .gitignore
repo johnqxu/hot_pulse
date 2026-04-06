@@ -1,0 +1,24 @@
+# 敏感信息
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+
+# Claude Code
+.claude/
+
+# Model cache
+.model_cache/
+
+# OS
+Thumbs.db
+.DS_Store

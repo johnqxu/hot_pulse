@@ -1,0 +1,33 @@
+[project]
+name = "hot-pulse"
+version = "0.1.0"
+description = "抖音创作者内容监控工具"
+requires-python = ">=3.10"
+dependencies = [
+    "httpx>=0.27",
+    "pydantic-settings>=2.0",
+    "python-dotenv>=1.0",
+    "loguru>=0.7",
+    "pyyaml>=6.0",
+    "pyzmq>=25.0",
+    "faster-whisper>=1.0",
+]
+
+[project.optional-dependencies]
+gpu = [
+    "optimum[openvino]>=1.14",
+    "librosa>=0.10",
+]
+dev = [
+    "pytest>=8.0",
+]
+dev = [
+    "pytest>=8.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/hot_pulse"]
