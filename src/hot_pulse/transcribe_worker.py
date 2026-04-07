@@ -76,23 +76,47 @@ class OVWhisperModel:
 
         logger.info("OVWhisperModel 加载成功: model={}, device=GPU", model_id)
 
+    # 30 秒窗口 = 480,000 采样点 @ 16kHz
+    _CHUNK_SAMPLES = 30 * 16000
+
     def transcribe(self, audio_path: str) -> tuple[str, float]:
         import numpy as np
 
-        # 加载音频 (extract_audio_worker 已输出 16kHz mono WAV)
         audio = self._load_audio(audio_path)
         duration = len(audio) / 16000.0
 
-        # 提取 mel features (numpy)
+        total_samples = len(audio)
+        if total_samples <= self._CHUNK_SAMPLES:
+            # 短音频：单次推理
+            text = self._transcribe_chunk(audio)
+            return text, duration
+
+        # 长音频：按 30 秒窗口分片，逐段推理
+        texts: list[str] = []
+        offset = 0
+        chunk_idx = 0
+        while offset < total_samples:
+            chunk = audio[offset : offset + self._CHUNK_SAMPLES]
+            chunk_text = self._transcribe_chunk(chunk)
+            if chunk_text:
+                texts.append(chunk_text)
+            chunk_idx += 1
+            offset += self._CHUNK_SAMPLES
+
+        logger.info("分片转写完成: {} 段, {} 段非空", chunk_idx, len(texts))
+        return "\n".join(texts), duration
+
+    def _transcribe_chunk(self, audio_chunk) -> str:
+        """对单个音频片段执行 encoder-decoder greedy decode。"""
+        import numpy as np
+
         input_features = self._processor.feature_extractor(
-            audio, sampling_rate=16000, return_tensors="np",
+            audio_chunk, sampling_rate=16000, return_tensors="np",
         ).input_features
 
-        # Encoder 前向推理
         encoder_out = self._model.encoder(input_features=input_features)
         hidden_states = encoder_out.last_hidden_state
 
-        # Decoder greedy decode 循环
         max_tokens = 448
         tokens = [self._sot, self._zh, self._transcribe_tok, self._notimestamps]
 
@@ -107,8 +131,7 @@ class OVWhisperModel:
                 break
             tokens.append(next_token)
 
-        text = self._processor.tokenizer.decode(tokens, skip_special_tokens=True)
-        return text, duration
+        return self._processor.tokenizer.decode(tokens, skip_special_tokens=True)
 
     @staticmethod
     def _load_audio(path: str):

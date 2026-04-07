@@ -21,9 +21,6 @@ gpu = [
 dev = [
     "pytest>=8.0",
 ]
-dev = [
-    "pytest>=8.0",
-]
 
 [build-system]
 requires = ["hatchling"]
