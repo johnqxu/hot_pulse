@@ -96,6 +96,9 @@ class SecretConfig(BaseSettings):
     tikhub_api_key: str
     feishu_app_id: str
     feishu_app_secret: str
+    feishu_bitable_app_token: str = ""
+    feishu_bitable_table_id: str = ""
+    dingtalk_webhook_url: str = ""
     zhipu_api_key: str = ""
     dingtalk_secret: str = ""
 
@@ -142,5 +145,13 @@ def load_config(config_path: str | Path = "config.yaml") -> AppConfig:
         config = AppConfig(**raw, secrets=secrets)
     except ValidationError as e:
         raise ValueError(f"配置文件校验失败:\n{e}") from e
+
+    # 用 .env 中的凭证覆盖 YAML 配置
+    if secrets.feishu_bitable_app_token:
+        config.feishu.bitable.app_token = secrets.feishu_bitable_app_token
+    if secrets.feishu_bitable_table_id:
+        config.feishu.bitable.table_id = secrets.feishu_bitable_table_id
+    if secrets.dingtalk_webhook_url:
+        config.dingtalk_worker.webhook_url = secrets.dingtalk_webhook_url
 
     return config

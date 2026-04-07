@@ -78,7 +78,7 @@
 - **THEN** 系统 SHALL 使用内置默认 prompt
 
 ### Requirement: 从 .env 文件加载敏感凭证
-系统 SHALL 从项目根目录的 `.env` 文件加载敏感凭证（TikHub API Key、飞书 App ID、飞书 App Secret），与 YAML 配置分开管理。
+系统 SHALL 从项目根目录的 `.env` 文件加载敏感凭证（TikHub API Key、飞书 App ID、飞书 App Secret、飞书 Bitable App Token、飞书 Bitable Table ID、钉钉 Webhook URL），与 YAML 配置分开管理。
 
 #### Scenario: 成功加载有效的 .env 文件
 - **WHEN** 存在包含所有必填 key 的有效 `.env` 文件（TIKHUB_API_KEY, FEISHU_APP_ID, FEISHU_APP_SECRET）
@@ -87,6 +87,32 @@
 #### Scenario: .env 文件缺少必填 key
 - **WHEN** `.env` 文件缺失或不包含所有必填 key
 - **THEN** 系统 SHALL 抛出清晰的错误信息，列出缺失的 key
+
+#### Scenario: 从 .env 读取飞书 bitable 凭证
+- **WHEN** `.env` 中配置了 `FEISHU_BITABLE_APP_TOKEN` 和 `FEISHU_BITABLE_TABLE_ID`
+- **THEN** `SecretConfig` SHALL 正确解析这两个值
+
+#### Scenario: 从 .env 读取钉钉 webhook
+- **WHEN** `.env` 中配置了 `DINGTALK_WEBHOOK_URL`
+- **THEN** `SecretConfig` SHALL 正确解析该值
+
+### Requirement: load_config 凭证合并
+`load_config()` SHALL 将 `SecretConfig` 中的敏感凭证注入到对应的配置模型中，优先使用环境变量值。当环境变量为空时，SHALL 回退到 `config.yaml` 中的值。
+
+#### Scenario: 环境变量覆盖 YAML 值
+- **WHEN** `.env` 中有 `FEISHU_BITABLE_APP_TOKEN=xxx` 且 `config.yaml` 中 `feishu.bitable.app_token` 为空
+- **THEN** 最终配置中 `feishu.bitable.app_token` SHALL 为 `xxx`
+
+#### Scenario: 环境变量为空时回退
+- **WHEN** `.env` 中 `FEISHU_BITABLE_APP_TOKEN` 未设置或为空
+- **THEN** 最终配置 SHALL 使用 `config.yaml` 中的值
+
+### Requirement: config.yaml.example 模板
+系统 SHALL 提供 `config.yaml.example` 文件，包含所有配置项的结构和注释，敏感字段值使用占位符。
+
+#### Scenario: 新环境部署
+- **WHEN** 新用户克隆仓库
+- **THEN** 可通过 `cp config.yaml.example config.yaml` 创建配置文件，按注释说明填写非敏感配置，敏感凭证通过 `.env` 提供
 
 ### Requirement: zhipu_api_key 凭证
 系统 SHALL 从 .env 文件加载可选的 ZHIPU_API_KEY，用于认证智谱 AI API 调用。

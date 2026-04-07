@@ -1,4 +1,5 @@
 # Hot Pulse 配置文件
+# 复制此文件为 config.yaml 并填入实际值
 
 tikhub:
   base_url: https://api.tikhub.io
@@ -7,14 +8,14 @@ tikhub:
 
 feishu:
   bitable:
-    app_token: ""    # 从 .env 读取 FEISHU_BITABLE_APP_TOKEN
-    table_id: ""     # 从 .env 读取 FEISHU_BITABLE_TABLE_ID
+    app_token: your_feishu_bitable_app_token_here    # 从飞书多维表格 URL 中获取，或使用环境变量 FEISHU_BITABLE_APP_TOKEN
+    table_id: your_table_id_here       # 从数据表 URL 参数中获取
 
 creators:
-  - name: 口罩哥
-    sec_uid: MS4wLjABAAAAnKeRN8QUgooS1pPRqOf_N_jnuztzUyocl0_vUndQFJs       # 替换为实际 sec_uid
-  - name: 爽姐
-    sec_uid: MS4wLjABAAAAlXiEFtklUwNXSVABjlGMjik9h2_BuCOPHc-d9K0KO7Q       # 替换为实际 sec_uid
+  - name: 创作者名称
+    sec_uid: your_creator_sec_uid_here  # 替换为实际 sec_uid，或使用环境变量 CREATOR_*_SEC_UID
+  # - name: 创作者2
+  #   sec_uid: your_creator_sec_uid_here
 
 schedule:
   interval_minutes: 59
@@ -55,7 +56,7 @@ analyze_worker:
 dingtalk_worker:
   pull_endpoint: "tcp://127.0.0.1:5555"
   push_endpoint: "tcp://127.0.0.1:5556"
-  webhook_url: ""  # 从 .env 读取 DINGTALK_WEBHOOK_URL
+  webhook_url: "your_dingtalk_webhook_url_here"  # 钉钉自定义机器人 Webhook 地址，或使用环境变量 DINGTALK_WEBHOOK_URL
   min_interval: 120
 
 patrol_worker:
