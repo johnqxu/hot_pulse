@@ -23,7 +23,7 @@ _WORKERS = [
 
 # 时间窗口
 _HOUR_START = 7
-_HOUR_END = 22
+_HOUR_END = 24
 
 # Worker 启动后等待秒数
 _READY_WAIT = 30

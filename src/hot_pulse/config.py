@@ -12,6 +12,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class TikHubConfig(BaseModel):
     base_url: str = "https://api.tikhub.io"
     endpoint: str = "/api/v1/douyin/app/v3/fetch_user_post_videos"
+    fallback_endpoint: str = "/api/v1/douyin/web/fetch_user_post_videos"
     max_count: int = 20
 
 
@@ -70,8 +71,11 @@ class AnalyzeWorkerConfig(WorkerConfig):
     pull_endpoint: str = "tcp://127.0.0.1:5554"
     push_endpoint: str = "tcp://127.0.0.1:5555"
     report_dir: str = r"D:\batch\report"
-    model: str = "glm-5.1"
+    model: str = "deepseek-v4-flash"
     prompt: str = ""
+    openai_base_url: str = "https://api.deepseek.com/v1"
+    reasoning_effort: str = "high"
+    extra_body: dict[str, object] = {}
 
 
 class DingTalkWorkerConfig(WorkerConfig):
@@ -88,7 +92,6 @@ class PatrolWorkerConfig(BaseModel):
 
 class SecretConfig(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -99,7 +102,7 @@ class SecretConfig(BaseSettings):
     feishu_bitable_app_token: str = ""
     feishu_bitable_table_id: str = ""
     dingtalk_webhook_url: str = ""
-    zhipu_api_key: str = ""
+    openai_api_key: str = ""
     dingtalk_secret: str = ""
 
 
@@ -130,7 +133,13 @@ def load_config(config_path: str | Path = "config.yaml") -> AppConfig:
     if not isinstance(raw, dict):
         raise ValueError(f"配置文件格式错误: {config_path} 应为 YAML 映射")
 
-    load_dotenv()
+    # 以 config_path 所在目录为基准查找 .env，避免 CWD 不同导致加载失败
+    env_path = (config_path.parent / ".env").resolve()
+    if env_path.exists():
+        # override=True：确保 .env 的值覆盖系统环境变量中的同名变量
+        load_dotenv(env_path, override=True)
+    else:
+        raise FileNotFoundError(f".env 文件不存在: {env_path}")
 
     try:
         secrets = SecretConfig()  # type: ignore[call-arg]
@@ -140,6 +149,19 @@ def load_config(config_path: str | Path = "config.yaml") -> AppConfig:
             f".env 缺少必要的环境变量: {', '.join(missing)}\n"
             f"请参考 .env.example 创建 .env 文件"
         ) from e
+
+    # 诊断：打印密钥加载状态（脱敏）
+    from loguru import logger as _log
+    tk = secrets.tikhub_api_key
+    fa = secrets.feishu_app_id
+    oa = secrets.openai_api_key
+    _log.info(
+        "配置加载完成: env_path={}, tikhub_key={}, feishu_app_id={}, openai_key={}",
+        env_path,
+        f"{tk[:8]}..." if tk else "空",
+        f"{fa[:8]}..." if fa else "空",
+        f"{oa[:8]}..." if oa else "空",
+    )
 
     try:
         config = AppConfig(**raw, secrets=secrets)

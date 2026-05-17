@@ -16,7 +16,6 @@ from hot_pulse.worker_base import run_worker
 # 常量
 # ---------------------------------------------------------------------------
 
-GLM_API_URL = "https://open.bigmodel.cn/api/coding/paas/v4/chat/completions"
 SUMMARY_PATTERN = re.compile(r"^<<<SUMMARY>>>(.+?)<<<END>>>")
 
 _DEFAULT_PROMPT = """\
@@ -54,19 +53,19 @@ _DEFAULT_PROMPT = """\
 
 
 # ---------------------------------------------------------------------------
-# GLM API 调用
+# LLM API 调用
 # ---------------------------------------------------------------------------
 
-def _call_glm_api(text: str, config: AppConfig) -> str:
-    """调用智谱 AI chat completions 接口，返回完整响应文本。"""
-    api_key = config.secrets.zhipu_api_key if config.secrets else ""
+def _call_llm_api(text: str, config: AppConfig) -> str:
+    """调用 OpenAI 兼容的 chat/completions 接口，返回完整响应文本。"""
+    api_key = config.secrets.openai_api_key if config.secrets else ""
     if not api_key:
-        raise RuntimeError("ZHIPU_API_KEY 未配置，请在 .env 中设置")
+        raise RuntimeError("OPENAI_API_KEY 未配置，请在 .env 中设置")
 
     model = config.analyze_worker.model
     prompt = config.analyze_worker.prompt or _DEFAULT_PROMPT
 
-    payload = {
+    payload: dict[str, object] = {
         "model": model,
         "messages": [
             {"role": "system", "content": prompt},
@@ -75,22 +74,32 @@ def _call_glm_api(text: str, config: AppConfig) -> str:
         "temperature": 0.7,
     }
 
+    reasoning_effort = config.analyze_worker.reasoning_effort
+    if reasoning_effort:
+        payload["reasoning_effort"] = reasoning_effort
+
+    extra_body = config.analyze_worker.extra_body
+    if extra_body:
+        payload.update(extra_body)
+
+    url = f"{config.analyze_worker.openai_base_url}/chat/completions"
+
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
 
-    logger.info("调用 GLM API: model={}", model)
+    logger.info("调用 LLM API: url={}, model={}", url, model)
 
     with httpx.Client(timeout=300.0) as client:
-        resp = client.post(GLM_API_URL, json=payload, headers=headers)
+        resp = client.post(url, json=payload, headers=headers)
 
     if resp.status_code != 200:
-        raise RuntimeError(f"GLM API 调用失败: status={resp.status_code}, body={resp.text[:500]}")
+        raise RuntimeError(f"LLM API 调用失败: status={resp.status_code}, body={resp.text[:500]}")
 
     data = resp.json()
     content = data["choices"][0]["message"]["content"]
-    logger.info("GLM API 响应成功: chars={}", len(content))
+    logger.info("LLM API 响应成功: chars={}", len(content))
     return content
 
 
@@ -99,10 +108,10 @@ def _call_glm_api(text: str, config: AppConfig) -> str:
 # ---------------------------------------------------------------------------
 
 def _parse_response(response: str, fallback_title: str) -> tuple[str, str]:
-    """从 GLM 响应中提取摘要和报告正文。
+    """从 LLM 响应中提取摘要和报告正文。
 
     Returns:
-        (summary, report_body) 摘要不超过 10 个汉字，正文不含摘要行。
+        (summary, report_body): 摘要不超过 10 个汉字，正文不含摘要行。
     """
     lines = response.strip().split("\n", 1)
     first_line = lines[0].strip()
@@ -125,7 +134,7 @@ def _parse_response(response: str, fallback_title: str) -> tuple[str, str]:
 # ---------------------------------------------------------------------------
 
 def _build_report(task: Task, report_body: str) -> str:
-    """组装完整 Markdown 报告：YAML frontmatter + 元信息头 + GLM 报告正文。"""
+    """组装完整 Markdown 报告：YAML frontmatter + 元信息头 + LLM 报告正文。"""
     now = datetime.now()
     analysis_time = now.strftime("%Y-%m-%d %H:%M:%S")
 
@@ -188,7 +197,7 @@ def _read_text_file(path: Path) -> str:
 
 
 def _analyze(text_file: str, report_dir: str, task: Task, config: AppConfig) -> str:
-    """读取转写文本 → 调用 GLM API → 保存报告文件。"""
+    """读取转写文本 → 调用 LLM API → 保存报告文件。"""
     # 读取转写文本（多编码回退）
     path = Path(text_file)
     text = _read_text_file(path)
@@ -198,12 +207,12 @@ def _analyze(text_file: str, report_dir: str, task: Task, config: AppConfig) -> 
     if len(text.strip()) < 20:
         raise RuntimeError(f"转写文本内容过短或为空: chars={len(text.strip())}")
 
-    # 调用 GLM API
-    response = _call_glm_api(text, config)
+    # 调用 LLM API
+    response = _call_llm_api(text, config)
 
     # 验证报告内容
     if len(response.strip()) < 50:
-        raise RuntimeError(f"GLM 返回报告内容过短: chars={len(response.strip())}")
+        raise RuntimeError(f"LLM 返回报告内容过短: chars={len(response.strip())}")
 
     # 解析摘要和报告正文
     summary, report_body = _parse_response(response, task.title)

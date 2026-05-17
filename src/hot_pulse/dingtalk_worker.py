@@ -126,7 +126,9 @@ def handle_dingtalk_push(task: Task, config: AppConfig) -> dict[str, Any]:
     _wait_for_rate_limit(config.dingtalk_worker.min_interval)
 
     # 发送钉钉消息
-    _send_dingtalk_message(webhook_url, secret, task.title, report_text)
+    # 钉钉 markdown 消息 title 为必填字段，task.title 可能为空，兜底用 creator
+    dingtalk_title = task.title or f"{task.creator} 视频分析报告"
+    _send_dingtalk_message(webhook_url, secret, dingtalk_title, report_text)
 
     return {}
 

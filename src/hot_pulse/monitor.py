@@ -39,31 +39,53 @@ def run_monitor(config_path: str = "config.yaml") -> MonitorResult:
     """
     result = MonitorResult()
 
+    logger.info("[monitor] 步骤1: 开始加载配置...")
     try:
         config = load_config(config_path)
     except (FileNotFoundError, ValueError) as e:
         logger.error(f"配置加载失败: {e}")
         result.errors.append(str(e))
         return result
+    logger.info("[monitor] 步骤1: 配置加载完成, creators={}", len(config.creators))
 
     result.total_creators = len(config.creators)
     if not config.creators:
         logger.warning("未配置任何创作者，跳过监控")
         return result
 
-    tikhub = TikHubClient(config)
-    feishu = FeishuClient(config)
+    logger.info("[monitor] 步骤2: 初始化 TikHubClient...")
+    try:
+        tikhub = TikHubClient(config)
+    except Exception as e:
+        logger.error("[monitor] TikHubClient 初始化失败: {}", e)
+        result.errors.append(str(e))
+        return result
+    logger.info("[monitor] 步骤2: TikHubClient 就绪")
+
+    logger.info("[monitor] 步骤3: 初始化 FeishuClient...")
+    try:
+        feishu = FeishuClient(config)
+    except Exception as e:
+        logger.error("[monitor] FeishuClient 初始化失败: {}", e)
+        result.errors.append(str(e))
+        tikhub.close()
+        return result
+    logger.info("[monitor] 步骤3: FeishuClient 就绪")
 
     # ZMQ 发布者：仅在配置启用时创建
     zmq_pub: ZmqPublisher | None = None
     if config.zeromq.enabled:
+        logger.info("[monitor] 步骤4: 初始化 ZMQ Publisher...")
         try:
             zmq_pub = ZmqPublisher(config.zeromq.push_endpoint)
+            logger.info("[monitor] 步骤4: ZMQ Publisher 就绪")
         except Exception as e:
             logger.warning(f"ZMQ 初始化失败，将以仅飞书模式运行: {e}")
 
+    logger.info("[monitor] 步骤5: 开始遍历 {} 个创作者", result.total_creators)
     try:
         for creator in config.creators:
+            logger.info("[monitor] 处理创作者: {} (sec_uid={}...)", creator.name, creator.sec_uid[:20])
             try:
                 new_count = _process_creator(
                     tikhub, feishu, zmq_pub, creator.name, creator.sec_uid
@@ -99,6 +121,7 @@ def _process_creator(
     logger.info(f"开始处理创作者: {creator_name}")
 
     # 1. 从 TikHub 拉取最新视频
+    logger.info("[monitor] 即将调用 fetch_user_post_videos: sec_uid={}...", sec_uid[:20])
     videos = tikhub.fetch_user_post_videos(sec_uid)
     logger.info(f"TikHub 返回 {len(videos)} 条视频 (博主={creator_name})")
 

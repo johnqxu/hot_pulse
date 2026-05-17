@@ -4,6 +4,7 @@
 tikhub:
   base_url: https://api.tikhub.io
   endpoint: /api/v1/douyin/app/v3/fetch_user_post_videos
+  fallback_endpoint: /api/v1/douyin/web/fetch_user_post_videos  # 主接口失败 3 次后降级的备用接口，设为空禁用
   max_count: 10
 
 feishu:
@@ -50,8 +51,13 @@ analyze_worker:
   pull_endpoint: "tcp://127.0.0.1:5554"
   push_endpoint: "tcp://127.0.0.1:5555"
   report_dir: "D:\\docs\\财经\\02-市场分析\\视频分析报告"
-  model: "glm-5.1"
-  # prompt: ""  # 留空则使用内置默认 prompt
+  model: "deepseek-v4-flash"          # LLM 模型 ID，也可改为 deepseek-v4-pro / glm-5.1 等
+  # prompt: ""                        # 留空则使用内置默认 prompt（财经分析师）
+  openai_base_url: "https://api.deepseek.com/v1"  # OpenAI 兼容 API 基础 URL，不含 /chat/completions
+  reasoning_effort: "high"            # 推理深度：high / max，留空则不发送该字段
+  extra_body:                         # 厂商专属参数，展开合并到请求体
+    # thinking:                        # DeepSeek V4 thinking 模式开关
+    #   type: "enabled"                # "enabled"（开启）/ "disabled"（关闭），思考模式下不支持 temperature
 
 dingtalk_worker:
   pull_endpoint: "tcp://127.0.0.1:5555"

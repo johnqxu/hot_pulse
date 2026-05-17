@@ -5,11 +5,13 @@
 ## Requirements
 
 ### Requirement: 从 TikHub 获取创作者视频
-系统 SHALL 调用 TikHub API 端点 `/api/v1/douyin/app/v3/fetch_user_post_videos`，使用创作者的 `sec_user_id` 作为标识，获取其最新视频列表。
+系统 SHALL 调用 TikHub API 获取创作者最新视频列表，优先使用 APP v3 端点 `/api/v1/douyin/app/v3/fetch_user_post_videos`（参数：`sec_user_id`、`max_cursor`、`count`、`sort_type`），失败 3 次后降级到 Web 端点 `/api/v1/douyin/web/fetch_user_post_videos`（参数：`sec_user_id`、`max_cursor`、`count`、`filter_type`）。
 
-#### Scenario: 成功获取创作者视频
+#### Scenario: 从 TikHub 成功获取视频列表
 - **WHEN** 系统使用有效的 `sec_user_id` 查询 TikHub API
-- **THEN** 系统 SHALL 返回视频记录列表，至少包含：视频 ID、视频标题，以及 `video.play_addr_h264.url_list` 中的播放地址
+- **THEN** 系统 SHALL 成功获取该创作者的最新视频列表
+- **AND** 每条视频记录 SHALL 包含 `video_id`、`title`、`url`、`play_urls` 字段
+- **AND** 视频列表按时间倒序排列（最新在前）
 
 #### Scenario: play_addr_h264 节点缺失
 - **WHEN** 视频条目不包含 `video.play_addr_h264` 节点
@@ -17,9 +19,13 @@
 - **AND** 若该节点也缺失，系统 SHALL 存储空 JSON 数组 `[]`
 
 #### Scenario: TikHub API 返回错误
-- **WHEN** TikHub API 调用失败（网络错误、频率限制、无效响应）
-- **THEN** 系统 SHALL 使用指数退避策略重试最多 3 次
-- **AND** 若全部重试失败，系统 SHALL 记录错误日志并跳过该创作者，继续处理下一个
+- **WHEN** TikHub API 调用失败（网络错误、频率限制、无效响应或主备接口均失败）
+- **THEN** monitor SHALL 将该创作者标记为处理失败，记录错误信息，并继续处理下一创作者
+
+#### Scenario: 视频列表为空
+- **WHEN** TikHub API 返回成功但视频列表为空（创作者近期未发布新视频）
+- **THEN** monitor SHALL 将该创作者视为已处理完成，无新视频
+- **AND** 不向 ZMQ 推送任何任务
 
 ### Requirement: 通过对比已有记录检测新视频
 系统 SHALL 查询飞书多维表格中每个博主已有的视频 ID，计算差集以识别新发布的视频。

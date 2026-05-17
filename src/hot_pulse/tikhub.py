@@ -15,8 +15,16 @@ class TikHubClient:
     def __init__(self, config: AppConfig) -> None:
         self._base_url = config.tikhub.base_url
         self._endpoint = config.tikhub.endpoint
+        self._fallback_endpoint = config.tikhub.fallback_endpoint
         self._max_count = config.tikhub.max_count
-        self._api_key = config.secrets.tikhub_api_key
+
+        secrets = config.secrets
+        if secrets is None:
+            raise RuntimeError("config.secrets 为空，请检查 .env 文件是否在 config.yaml 同目录下且包含 TIKHUB_API_KEY")
+        self._api_key = secrets.tikhub_api_key
+        if not self._api_key:
+            raise RuntimeError("TIKHUB_API_KEY 未配置或为空，请检查 .env 文件")
+
         self._client = httpx.Client(
             base_url=self._base_url,
             headers={"Authorization": f"Bearer {self._api_key}"},
@@ -24,32 +32,72 @@ class TikHubClient:
         )
 
     def fetch_user_post_videos(self, sec_uid: str) -> list[VideoInfo]:
-        """获取指定创作者的最新视频列表，带重试机制（最多3次，指数退避）。"""
+        """获取指定创作者的最新视频列表。
+
+        优先使用 APP v3 接口（最多 3 次重试），全部失败后降级到 Web 备用接口。
+        """
+        # 主接口：APP v3，最多 3 次重试
         max_retries = 3
         last_error: Exception | None = None
 
         for attempt in range(1, max_retries + 1):
             try:
-                return self._do_fetch(sec_uid)
+                return self._do_fetch_primary(sec_uid)
             except Exception as e:
                 last_error = e
                 if attempt < max_retries:
                     wait = 2**attempt
                     logger.warning(
-                        f"TikHub 请求失败 (第{attempt}次), {wait}秒后重试: {e}"
+                        f"TikHub 主接口 请求失败 (第{attempt}次), {wait}秒后重试: {e}"
                     )
                     time.sleep(wait)
 
-        logger.error(f"TikHub 请求全部失败 (sec_uid={sec_uid}): {last_error}")
-        raise last_error  # type: ignore[misc]
+        logger.error(f"TikHub 主接口 全部失败 (sec_uid={sec_uid}): {last_error}")
 
-    def _do_fetch(self, sec_uid: str) -> list[VideoInfo]:
+        # 备用接口：Web API，不重试
+        if not self._fallback_endpoint:
+            raise last_error  # type: ignore[misc]
+
+        logger.info("尝试 TikHub 备用接口: endpoint={}", self._fallback_endpoint)
+        try:
+            return self._do_fetch_fallback(sec_uid)
+        except Exception as fb_error:
+            logger.error(
+                "TikHub 备用接口 也失败 (sec_uid={}): 主接口错误={}, 备用接口错误={}",
+                sec_uid, last_error, fb_error,
+            )
+            raise fb_error
+
+    def _do_fetch_primary(self, sec_uid: str) -> list[VideoInfo]:
+        """APP v3 接口：参数含 sort_type。"""
         params = {
             "sec_user_id": sec_uid,
-            "max_count": self._max_count,
-            "cursor": 0,
+            "count": self._max_count,
+            "max_cursor": 0,
+            "sort_type": 0,
         }
-        response = self._client.get(self._endpoint, params=params)
+        return self._request_and_parse(self._endpoint, params)
+
+    def _do_fetch_fallback(self, sec_uid: str) -> list[VideoInfo]:
+        """Web 备用接口：参数含 filter_type。"""
+        params = {
+            "sec_user_id": sec_uid,
+            "count": self._max_count,
+            "max_cursor": 0,
+            "filter_type": 0,
+        }
+        return self._request_and_parse(self._fallback_endpoint, params)
+
+    def _request_and_parse(self, endpoint: str, params: dict) -> list[VideoInfo]:
+        """发送 GET 请求并解析视频列表响应。"""
+        response = self._client.get(endpoint, params=params)
+        if response.status_code != 200:
+            logger.error(
+                "TikHub 返回非 200: endpoint={}, status={}, body={}",
+                endpoint,
+                response.status_code,
+                response.text[:1000],
+            )
         response.raise_for_status()
         data = response.json()
 
@@ -97,7 +145,7 @@ class TikHubClient:
         if len(videos) > self._max_count:
             videos = videos[: self._max_count]
 
-        logger.debug(f"TikHub 返回 {len(videos)} 条视频 (sec_uid={sec_uid[:16]}...)")
+        logger.debug(f"TikHub 返回 {len(videos)} 条视频 (endpoint={endpoint})")
         return videos
 
     def close(self) -> None:

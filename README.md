@@ -23,7 +23,7 @@
 - ZeroMQ (pyzmq): 流水线消息通信
 - ffmpeg CLI: 音频提取
 - OpenVINO + optimum-intel (Intel GPU) / faster-whisper (CPU 降级): 音频转写
-- 智谱 GLM API: 内容分析报告生成
+- OpenAI 兼容 LLM API（DeepSeek 等）: 内容分析报告生成
 - 钉钉自定义机器人 Webhook: Markdown 报告推送
 
 ## 快速开始
@@ -53,7 +53,7 @@ cp .env.example .env
 | `TIKHUB_API_KEY` | TikHub API 密钥 | 是 |
 | `FEISHU_APP_ID` | 飞书应用 App ID | 是 |
 | `FEISHU_APP_SECRET` | 飞书应用 App Secret | 是 |
-| `ZHIPU_API_KEY` | 智谱 AI API Key | 是 |
+| `OPENAI_API_KEY` | OpenAI 兼容 API Key（DeepSeek/智谱等） | 是 |
 | `DINGTALK_SECRET` | 钉钉机器人加签密钥 | 是 |
 
 编辑 `config.yaml`，配置监控的创作者和各 worker 参数。
@@ -66,7 +66,7 @@ cp .env.example .env
 python -m hot_pulse.main
 ```
 
-启动所有 worker 子进程，等待 30 秒后进入 monitor 定时调度（07:00-22:00，每 59 分钟一次）。按 `Ctrl+C` 优雅关闭。
+启动所有 worker 子进程，等待 30 秒后进入 monitor 定时调度（07:00-24:00，每 59 分钟一次）。按 `Ctrl+C` 优雅关闭。
 
 **独立运行单个 worker：**
 
@@ -105,6 +105,11 @@ creators:
   - name: 口罩哥
     sec_uid: MS4wLjABAAAA...
 
+# TikHub API（主接口失败 3 次后自动降级到备用接口）
+tikhub:
+  endpoint: /api/v1/douyin/app/v3/fetch_user_post_videos         # 主接口
+  fallback_endpoint: /api/v1/douyin/web/fetch_user_post_videos   # 备用接口，设为空禁用
+
 # 各 worker 的 ZMQ 端点和专属配置
 download_worker:
   download_dir: "D:\\batch\\video"
@@ -115,6 +120,8 @@ transcribe_worker:
   device: "gpu"  # gpu(Intel) 或 cpu
 
 analyze_worker:
+  model: "deepseek-v4-flash"
+  openai_base_url: "https://api.deepseek.com/v1"
   report_dir: "D:\\docs\\财经\\02-市场分析\\视频分析报告"
 
 dingtalk_worker:
@@ -132,12 +139,12 @@ src/hot_pulse/
 ├── download_worker.py     # 视频下载
 ├── extract_audio_worker.py # 音频提取（ffmpeg）
 ├── transcribe_worker.py   # 音频转文字（Whisper）
-├── analyze_worker.py      # 内容分析（GLM API → Markdown 报告）
+├── analyze_worker.py      # 内容分析（LLM API → Markdown 报告）
 ├── dingtalk_worker.py     # 钉钉群消息推送
 ├── task.py                # Task 数据模型
 ├── task_manager.py        # 任务状态流转 + 飞书同步
 ├── feishu.py              # 飞书多维表格客户端
-├── tikhub.py              # TikHub API 客户端
+├── tikhub.py              # TikHub API 客户端（主备降级）
 ├── zmq_client.py          # ZMQ PUSH/PULL 封装
 ├── config.py              # 配置模型与加载
 └── models.py              # 飞书记录数据模型

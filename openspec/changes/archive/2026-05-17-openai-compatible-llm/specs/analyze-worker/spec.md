@@ -1,8 +1,4 @@
-## Purpose
-
-Analyze worker 负责接收文字转写完成的任务，调用 OpenAI 兼容的 LLM API 对转写文本进行财经内容分析，生成结构化分析报告并保存为 Markdown 文件。
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: analyze worker handler
 系统 SHALL 提供 analyze worker 的 handler 函数，从 Task.inputs 中获取 text_file，读取转写文本，调用 OpenAI 兼容的 LLM API 生成财经内容分析报告。
@@ -14,14 +10,6 @@ Analyze worker 负责接收文字转写完成的任务，调用 OpenAI 兼容的
 - **AND** 将生成的报告保存为 `{report_dir}/{YYYYMMDD}-{creator}-{摘要}.md`
 - **AND** 报告文件包含 YAML frontmatter（video_id, platform, creator, title, create_time, analysis_time, tags）
 - **AND** 返回 {"report_file": report_file_path}
-
-#### Scenario: text_file 不存在
-- **WHEN** Task.inputs 中无 text_file
-- **THEN** 系统 SHALL 抛出 RuntimeError
-
-#### Scenario: 转写文本文件在磁盘上不存在
-- **WHEN** text_file 指向的文件在磁盘上不存在
-- **THEN** 系统 SHALL 抛出 RuntimeError
 
 ### Requirement: LLM API 调用
 系统 SHALL 使用 httpx 同步模式调用 OpenAI 兼容接口，接口地址和认证信息由配置驱动。将转写文本作为 user message 发送，搭配专用 system prompt 引导模型输出结构化分析报告。
@@ -45,28 +33,8 @@ Analyze worker 负责接收文字转写完成的任务，调用 OpenAI 兼容的
 - **AND** 系统 SHALL 解析首行的 `<<<SUMMARY>>>...<<<END>>>` 标记提取 10 字摘要用于文件名
 - **AND** 剩余行作为报告正文
 
-### Requirement: 报告格式
-系统 SHALL 生成的分析报告包含以下固定章节结构：内容摘要、推荐板块、推荐个股（A股/港股）、风险提示、操作建议、标签。
+## REMOVED Requirements
 
-#### Scenario: 报告包含完整章节
-- **WHEN** LLM 成功返回分析内容
-- **THEN** 报告 SHALL 包含 YAML frontmatter 和以下章节：内容摘要、推荐板块、推荐个股、风险提示、操作建议、标签
-- **AND** frontmatter 中的 video_id、creator、title 从 Task 对象获取
-- **AND** analysis_time 使用当前时间自动填充
-
-#### Scenario: 文件名生成
-- **WHEN** 生成报告文件名
-- **THEN** 系统 SHALL 使用格式 `{YYYYMMDD}-{creator}-{摘要}.md`
-- **AND** 摘要 SHALL 由 LLM 从响应首行分隔符 `<<<SUMMARY>>>...<<<END>>>` 中提取，不超过 10 个汉字
-- **AND** 文件名中的摘要 SHALL 移除不适合文件系统的字符（`/\:*?"<>|`）
-
-#### Scenario: 摘要提取失败兜底
-- **WHEN** LLM 响应首行不包含分隔符标记
-- **THEN** 系统 SHALL 使用视频标题截断至 10 个字符作为文件名摘要
-
-### Requirement: analyze worker 独立运行入口
-系统 SHALL 支持通过 `python -m hot_pulse.analyze_worker` 独立启动 analyze worker。
-
-#### Scenario: 以 CLI 方式运行
-- **WHEN** 用户执行 `python -m hot_pulse.analyze_worker`
-- **THEN** 系统 SHALL 调用 `run_worker("analyze", handle_analyze)`
+### Requirement: GLM API 调用
+**Reason**: 替换为通用的 "LLM API 调用" 需求，不再绑定智谱 GLM 专有接口
+**Migration**: 将 `openai_base_url` 设置为 `https://open.bigmodel.cn/api/coding/paas/v4`，`model` 设置为 `glm-5.1` 即可恢复智谱调用
