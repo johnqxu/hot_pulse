@@ -18,6 +18,7 @@ class Task(BaseModel):
     creator: str
     title: str
     platform: str = "抖音"
+    source: str = "subscription"  # "subscription" | "manual"
     feishu_record_id: str = ""
 
     # 阶段依赖与产出

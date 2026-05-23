@@ -43,7 +43,9 @@ def _extract_audio(video_file: str, audio_dir: str, video_id: str) -> str:
     except FileNotFoundError:
         raise RuntimeError("ffmpeg 未安装，请先安装 ffmpeg 并确保在 PATH 中")
     except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"ffmpeg 提取音频失败: {e.stderr.strip()[:500]}")
+        # 取 stderr 末尾（ffmpeg 真正的错误信息在最后）
+        err = e.stderr.strip()
+        raise RuntimeError(f"ffmpeg 提取音频失败: {err[-500:] if len(err) > 500 else err}")
 
     size_mb = audio_file.stat().st_size / (1024 * 1024)
     logger.info("音频提取完成: video_id={}, size={:.1f}MB", video_id, size_mb)

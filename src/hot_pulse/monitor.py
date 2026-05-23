@@ -167,6 +167,7 @@ def _send_zmq_task(
         video_id=video.video_id,
         creator=creator_name,
         title=video.title,
+        source="subscription",
         feishu_record_id=feishu_record_id,
         inputs={"play_urls": video.play_urls or []},
     )

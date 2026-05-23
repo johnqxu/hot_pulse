@@ -29,6 +29,7 @@ class VideoRecord:
     视频链接: str = ""           # type=1 文本（JSON 数组字符串）
     视频发现时间: int = 0        # type=5 日期时间（毫秒时间戳）
     视频ID: str = ""
+    来源: str = "subscription"   # subscription | manual
 
     # 阶段② — 视频下载
     视频下载开始时间: int = 0
@@ -65,6 +66,7 @@ FEISHU_FIELD_MAP: dict[str, str] = {
     "视频链接": "视频链接",
     "视频发现时间": "视频发现时间",
     "视频ID": "视频ID",
+    "来源": "来源",
     "视频下载开始时间": "视频下载开始时间",
     "视频下载完成时间": "视频下载完成时间",
     "视频文件地址": "视频文件地址",
