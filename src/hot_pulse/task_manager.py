@@ -70,6 +70,17 @@ STAGE_MAPPING: dict[str, StageConfig] = {
         next_type="dingtalk_push",
         next_input_map={"report_file": "report_file"},
     ),
+    "knowledge": StageConfig(
+        init_status="文字转写完成",
+        running_status="知识整理中",
+        finish_status="知识整理完成",
+        fail_status="知识整理失败",
+        start_field="内容分析开始时间",
+        end_field="内容分析结束时间",
+        output_map={"obsidian_note": "分析报告地址"},
+        next_type=None,
+        next_input_map={"text_file": "text_file"},
+    ),
     "dingtalk_push": StageConfig(
         init_status="报告分析完成",
         running_status="报告推送中",
@@ -157,25 +168,39 @@ class TaskManager:
         return task
 
     def build_next(self, task: Task) -> Task | None:
-        """基于当前任务的 outputs 构造下一阶段 Task。最后一个阶段返回 None。"""
+        """基于当前任务的 outputs 构造下一阶段 Task。最后一个阶段返回 None。
+
+        transcribe 阶段根据 task.source 分流：
+        - source="manual" → knowledge（知识整理）
+        - 其他 → analyze（财经分析）
+        """
         cfg = STAGE_MAPPING.get(task.task_type)
-        if cfg is None or cfg.next_type is None:
+        if cfg is None:
             return None
+
+        next_type = cfg.next_type
+        if task.task_type == "transcribe" and task.source == "manual":
+            next_type = "knowledge"
+
+        if next_type is None:
+            return None
+
         inputs: dict[str, Any] = {}
         for src_key, dst_key in cfg.next_input_map.items():
             if src_key in task.outputs:
                 inputs[dst_key] = task.outputs[src_key]
         next_task = Task(
             task_id=str(uuid.uuid4()),
-            task_type=cfg.next_type,
+            task_type=next_type,
             video_id=task.video_id,
             creator=task.creator,
             title=task.title,
             platform=task.platform,
+            source=task.source,
             feishu_record_id=task.feishu_record_id,
             inputs=inputs,
         )
         next_task.touch()
 
-        logger.info("[→{}] 构建下一阶段任务: video_id={}", cfg.next_type, task.video_id)
+        logger.info("[→{}] 构建下一阶段任务: video_id={}", next_type, task.video_id)
         return next_task
