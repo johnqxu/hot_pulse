@@ -15,7 +15,6 @@ from loguru import logger
 from hot_pulse.analyze_worker import _call_llm_api
 from hot_pulse.config import AppConfig
 from hot_pulse.task import Task
-from hot_pulse.worker_base import run_worker
 
 # ---------------------------------------------------------------------------
 # 内置默认 Prompt
@@ -140,12 +139,3 @@ def _sanitize_filename(name: str) -> str:
 # ---------------------------------------------------------------------------
 # CLI 入口
 # ---------------------------------------------------------------------------
-
-
-def run_knowledge_worker(config_path: str = "config.yaml") -> None:
-    """启动 knowledge worker。"""
-    run_worker("knowledge", handle_knowledge, config_path)
-
-
-if __name__ == "__main__":
-    run_knowledge_worker()

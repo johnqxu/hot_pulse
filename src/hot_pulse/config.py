@@ -34,42 +34,23 @@ class ScheduleConfig(BaseModel):
     interval_minutes: int = 59
 
 
-class ZeroMQConfig(BaseModel):
-    enabled: bool = False
-    push_endpoint: str = "tcp://127.0.0.1:5551"
-
-
-class WorkerConfig(BaseModel):
-    """Worker 公共配置基类。"""
-    pull_endpoint: str
-    push_endpoint: str
-
-
-class DownloadWorkerConfig(WorkerConfig):
-    pull_endpoint: str = "tcp://127.0.0.1:5551"
-    push_endpoint: str = "tcp://127.0.0.1:5552"
+class DownloadWorkerConfig(BaseModel):
     download_dir: str = r"D:\batch\video"
     url_priority: dict[str, int] = {}
 
 
-class ExtractAudioWorkerConfig(WorkerConfig):
-    pull_endpoint: str = "tcp://127.0.0.1:5552"
-    push_endpoint: str = "tcp://127.0.0.1:5553"
+class ExtractAudioWorkerConfig(BaseModel):
     audio_dir: str = r"D:\batch\audio"
 
 
-class TranscribeWorkerConfig(WorkerConfig):
-    pull_endpoint: str = "tcp://127.0.0.1:5553"
-    push_endpoint: str = "tcp://127.0.0.1:5554"
+class TranscribeWorkerConfig(BaseModel):
     text_dir: str = r"D:\batch\text"
     model_dir: str = r"D:\batch\whisper-model"
     model_size: str = "medium"
     device: str = "cpu"
 
 
-class AnalyzeWorkerConfig(WorkerConfig):
-    pull_endpoint: str = "tcp://127.0.0.1:5554"
-    push_endpoint: str = "tcp://127.0.0.1:5555"
+class AnalyzeWorkerConfig(BaseModel):
     report_dir: str = r"D:\batch\report"
     model: str = "deepseek-v4-flash"
     prompt: str = ""
@@ -78,17 +59,13 @@ class AnalyzeWorkerConfig(WorkerConfig):
     extra_body: dict[str, object] = {}
 
 
-class KnowledgeWorkerConfig(WorkerConfig):
-    pull_endpoint: str = "tcp://127.0.0.1:5557"
-    push_endpoint: str = ""   # 终端阶段，无需 push
+class KnowledgeWorkerConfig(BaseModel):
     obsidian_vault: str = r"D:\docs\Obsidian"
     model: str = ""      # 空则复用 analyze_worker.model
     prompt: str = ""     # 空则用内置默认
 
 
-class DingTalkWorkerConfig(WorkerConfig):
-    pull_endpoint: str = "tcp://127.0.0.1:5555"
-    push_endpoint: str = "tcp://127.0.0.1:5556"
+class DingTalkWorkerConfig(BaseModel):
     webhook_url: str = ""
     min_interval: int = 120
 
@@ -119,7 +96,6 @@ class AppConfig(BaseModel):
     feishu: FeishuConfig
     creators: list[CreatorConfig]
     schedule: ScheduleConfig = ScheduleConfig()
-    zeromq: ZeroMQConfig = ZeroMQConfig()
     download_worker: DownloadWorkerConfig = DownloadWorkerConfig()
     extract_audio_worker: ExtractAudioWorkerConfig = ExtractAudioWorkerConfig()
     transcribe_worker: TranscribeWorkerConfig = TranscribeWorkerConfig()

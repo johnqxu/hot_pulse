@@ -20,13 +20,7 @@ creators:
 schedule:
   interval_minutes: 59
 
-zeromq:
-  enabled: true
-  push_endpoint: "tcp://127.0.0.1:5551"
-
 download_worker:
-  pull_endpoint: "tcp://127.0.0.1:5551"
-  push_endpoint: "tcp://127.0.0.1:5552"
   download_dir: "D:\\batch\\video"
   url_priority:
     "*.amemv.com": 10
@@ -34,21 +28,15 @@ download_worker:
     "v3-search.douyinvod.com": 0
 
 extract_audio_worker:
-  pull_endpoint: "tcp://127.0.0.1:5552"
-  push_endpoint: "tcp://127.0.0.1:5553"
   audio_dir: "D:\\batch\\audio"
 
 transcribe_worker:
-  pull_endpoint: "tcp://127.0.0.1:5553"
-  push_endpoint: "tcp://127.0.0.1:5554"
   text_dir: "D:\\batch\\text"
   model_dir: "D:\\batch\\whisper-model"
   model_size: "medium"
   device: "gpu"
 
 analyze_worker:
-  pull_endpoint: "tcp://127.0.0.1:5554"
-  push_endpoint: "tcp://127.0.0.1:5555"
   report_dir: "D:\\docs\\财经\\02-市场分析\\视频分析报告"
   model: "deepseek-v4-flash"          # LLM 模型 ID，也可改为 deepseek-v4-pro / glm-5.1 等
   # prompt: ""                        # 留空则使用内置默认 prompt（财经分析师）
@@ -59,14 +47,11 @@ analyze_worker:
       type: "enabled"                # "enabled"（开启）/ "disabled"（关闭），思考模式下不支持 temperature
 
 knowledge_worker:
-  pull_endpoint: "tcp://127.0.0.1:5557"
   obsidian_vault: "D:\\docs\\Obsidian"
   model: ""           # 留空复用 analyze_worker 的 model
   prompt: ""          # 留空使用内置默认知识提炼 Prompt
 
 dingtalk_worker:
-  pull_endpoint: "tcp://127.0.0.1:5555"
-  push_endpoint: "tcp://127.0.0.1:5556"
   webhook_url: ""  # 从 .env 读取 DINGTALK_WEBHOOK_URL
   min_interval: 120
 

@@ -14,7 +14,6 @@ from loguru import logger
 
 from hot_pulse.config import AppConfig
 from hot_pulse.task import Task
-from hot_pulse.worker_base import run_worker
 
 # ---------------------------------------------------------------------------
 # 常量
@@ -136,11 +135,3 @@ def handle_dingtalk_push(task: Task, config: AppConfig) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # CLI 入口
 # ---------------------------------------------------------------------------
-
-def run_dingtalk_worker(config_path: str = "config.yaml") -> None:
-    """启动 dingtalk_push worker。"""
-    run_worker("dingtalk_push", handle_dingtalk_push, config_path)
-
-
-if __name__ == "__main__":
-    run_dingtalk_worker()

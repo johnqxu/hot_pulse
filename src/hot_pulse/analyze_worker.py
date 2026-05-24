@@ -10,7 +10,6 @@ from loguru import logger
 
 from hot_pulse.config import AppConfig
 from hot_pulse.task import Task
-from hot_pulse.worker_base import run_worker
 
 # ---------------------------------------------------------------------------
 # 常量
@@ -251,12 +250,3 @@ def handle_analyze(task: Task, config: AppConfig) -> dict[str, Any]:
         text_file, config.analyze_worker.report_dir, task, config,
     )
     return {"report_file": report_file}
-
-
-def run_analyze_worker(config_path: str = "config.yaml") -> None:
-    """启动 analyze worker。"""
-    run_worker("analyze", handle_analyze, config_path)
-
-
-if __name__ == "__main__":
-    run_analyze_worker()

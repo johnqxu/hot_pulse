@@ -8,7 +8,6 @@ from loguru import logger
 
 from hot_pulse.config import AppConfig
 from hot_pulse.task import Task
-from hot_pulse.worker_base import run_worker
 
 
 def _extract_audio(video_file: str, audio_dir: str, video_id: str) -> str:
@@ -62,12 +61,3 @@ def handle_extract_audio(task: Task, config: AppConfig) -> dict[str, Any]:
         video_file, config.extract_audio_worker.audio_dir, task.video_id,
     )
     return {"audio_file": audio_file}
-
-
-def run_extract_audio_worker(config_path: str = "config.yaml") -> None:
-    """启动 extract_audio worker。"""
-    run_worker("extract_audio", handle_extract_audio, config_path)
-
-
-if __name__ == "__main__":
-    run_extract_audio_worker()

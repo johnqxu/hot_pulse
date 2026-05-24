@@ -24,7 +24,7 @@ from hot_pulse.config import AppConfig, load_config
 from hot_pulse.feishu import FeishuClient
 from hot_pulse.models import VideoRecord
 from hot_pulse.task import Task
-from hot_pulse.zmq_client import ZmqPublisher
+from hot_pulse.pipeline import run_manual_pipeline
 
 # ---------------------------------------------------------------------------
 # yt-dlp 解析（只解析元信息，不下载）
@@ -91,20 +91,6 @@ def _build_task(
 # ---------------------------------------------------------------------------
 # ZMQ 推送
 # ---------------------------------------------------------------------------
-
-
-def _push_and_exit(task: Task, config: AppConfig) -> None:
-    endpoint = config.zeromq.push_endpoint
-    try:
-        pub = ZmqPublisher(endpoint)
-        try:
-            pub.send_task(task)
-        finally:
-            pub.close()
-    except Exception as e:
-        print(f"ZMQ 推送失败: {e}", file=sys.stderr)
-        sys.exit(1)
-    print(json.dumps({"task_id": task.task_id, "status": "submitted"}))
 
 
 def _now_ms() -> int:
@@ -186,8 +172,8 @@ def main() -> None:
         feishu_record_id=feishu_record_id,
     )
 
-    # 4. 推送
-    _push_and_exit(task, config)
+    # 4. 串行执行管道: download → extract → transcribe → knowledge
+    run_manual_pipeline(task, config)
 
 
 if __name__ == "__main__":

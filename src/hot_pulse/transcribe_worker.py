@@ -8,7 +8,6 @@ from loguru import logger
 
 from hot_pulse.config import AppConfig
 from hot_pulse.task import Task
-from hot_pulse.worker_base import run_worker
 
 _model: TranscribeModel | None = None
 
@@ -247,12 +246,3 @@ def handle_transcribe(task: Task, config: AppConfig) -> dict[str, Any]:
         audio_file, config.transcribe_worker.text_dir, task.video_id, config,
     )
     return {"text_file": text_file}
-
-
-def run_transcribe_worker(config_path: str = "config.yaml") -> None:
-    """启动 transcribe worker。"""
-    run_worker("transcribe", handle_transcribe, config_path)
-
-
-if __name__ == "__main__":
-    run_transcribe_worker()

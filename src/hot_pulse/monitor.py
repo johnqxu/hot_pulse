@@ -9,9 +9,9 @@ from loguru import logger
 from hot_pulse.config import load_config, AppConfig
 from hot_pulse.feishu import FeishuClient
 from hot_pulse.models import VideoInfo, VideoRecord, build_record
+from hot_pulse.pipeline import run_subscription_pipeline
 from hot_pulse.task import Task
 from hot_pulse.tikhub import TikHubClient
-from hot_pulse.zmq_client import ZmqPublisher
 
 
 @dataclass
@@ -72,23 +72,13 @@ def run_monitor(config_path: str = "config.yaml") -> MonitorResult:
         return result
     logger.info("[monitor] 步骤3: FeishuClient 就绪")
 
-    # ZMQ 发布者：仅在配置启用时创建
-    zmq_pub: ZmqPublisher | None = None
-    if config.zeromq.enabled:
-        logger.info("[monitor] 步骤4: 初始化 ZMQ Publisher...")
-        try:
-            zmq_pub = ZmqPublisher(config.zeromq.push_endpoint)
-            logger.info("[monitor] 步骤4: ZMQ Publisher 就绪")
-        except Exception as e:
-            logger.warning(f"ZMQ 初始化失败，将以仅飞书模式运行: {e}")
-
-    logger.info("[monitor] 步骤5: 开始遍历 {} 个创作者", result.total_creators)
+    logger.info("[monitor] 步骤4: 开始遍历 {} 个创作者", result.total_creators)
     try:
         for creator in config.creators:
             logger.info("[monitor] 处理创作者: {} (sec_uid={}...)", creator.name, creator.sec_uid[:20])
             try:
                 new_count = _process_creator(
-                    tikhub, feishu, zmq_pub, creator.name, creator.sec_uid
+                    tikhub, feishu, creator.name, creator.sec_uid, config
                 )
                 result.success_creators += 1
                 result.total_new_videos += new_count
@@ -100,8 +90,6 @@ def run_monitor(config_path: str = "config.yaml") -> MonitorResult:
     finally:
         tikhub.close()
         feishu.close()
-        if zmq_pub:
-            zmq_pub.close()
 
     logger.info(
         f"监控完成: {result.success_creators}/{result.total_creators} 创作者成功, "
@@ -113,9 +101,9 @@ def run_monitor(config_path: str = "config.yaml") -> MonitorResult:
 def _process_creator(
     tikhub: TikHubClient,
     feishu: FeishuClient,
-    zmq_pub: ZmqPublisher | None,
     creator_name: str,
     sec_uid: str,
+    config: AppConfig,
 ) -> int:
     """处理单个创作者：拉取视频、对比去重、写入新记录、发送ZMQ消息。返回新视频数量。"""
     logger.info(f"开始处理创作者: {creator_name}")
@@ -145,22 +133,21 @@ def _process_creator(
     records: list[VideoRecord] = [build_record(v, creator_name) for v in new_videos]
     record_ids = feishu.create_records(records)
 
-    # 5. 通过 ZMQ 发送 Task 消息
-    if zmq_pub:
-        for i, video in enumerate(new_videos):
-            record_id = record_ids[i] if i < len(record_ids) else ""
-            _send_zmq_task(zmq_pub, video, creator_name, record_id)
+    # 5. 串行执行管道: download → extract → transcribe → analyze → dingtalk
+    for i, video in enumerate(new_videos):
+        record_id = record_ids[i] if i < len(record_ids) else ""
+        _process_new_video(video, creator_name, record_id, config)
 
     return len(new_videos)
 
 
-def _send_zmq_task(
-    zmq_pub: ZmqPublisher,
+def _process_new_video(
     video: VideoInfo,
     creator_name: str,
     feishu_record_id: str,
+    config: AppConfig,
 ) -> None:
-    """构造 Task 对象并通过 ZMQ 发送，失败时记录日志但不阻塞主流程。"""
+    """构造 Task 并调用 subscription pipeline 处理单个新视频。"""
     task = Task(
         task_id=str(uuid.uuid4()),
         task_type="download",
@@ -173,9 +160,9 @@ def _send_zmq_task(
     )
     task.touch()
     try:
-        zmq_pub.send_task(task)
+        run_subscription_pipeline(task, config)
     except Exception as e:
-        logger.warning(f"ZMQ Task 发送失败 (video_id={video.video_id}): {e}")
+        logger.error("视频处理失败: video_id={}, error={}", video.video_id, e)
 
 
 if __name__ == "__main__":

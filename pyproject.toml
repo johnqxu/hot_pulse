@@ -9,7 +9,6 @@ dependencies = [
     "python-dotenv>=1.0",
     "loguru>=0.7",
     "pyyaml>=6.0",
-    "pyzmq>=25.0",
     "faster-whisper>=1.0",
     "yt-dlp>=2024.0",
 ]
