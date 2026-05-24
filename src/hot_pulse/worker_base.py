@@ -19,6 +19,7 @@ _WORKER_COLORS: dict[str, str] = {
     "extract_audio": "yellow",
     "transcribe": "blue",
     "analyze": "magenta",
+    "knowledge": "green",
     "dingtalk_push": "red",
 }
 
@@ -54,7 +55,8 @@ def run_worker(
     feishu = FeishuClient(config)
     tm = TaskManager(feishu)
     consumer = ZmqConsumer(worker_cfg.pull_endpoint)
-    publisher = ZmqPublisher(worker_cfg.push_endpoint)
+    # 终端阶段（如 knowledge）没有 push_endpoint，不创建 publisher
+    publisher = ZmqPublisher(worker_cfg.push_endpoint) if worker_cfg.push_endpoint else None
 
     shutting_down = False
 
@@ -82,8 +84,8 @@ def run_worker(
                     tm.finish(task, outputs)
 
                     next_task = tm.build_next(task)
-                    if next_task:
-                        publisher.send_task(next_task)
+                    if next_task and publisher:
+                        _send_next_task(config, next_task, publisher)
                 except Exception as e:
                     tm.fail(task, str(e))
             if pending_tasks:
@@ -111,17 +113,34 @@ def run_worker(
                 tm.finish(task, outputs)
 
                 next_task = tm.build_next(task)
-                if next_task:
-                    publisher.send_task(next_task)
+                if next_task and publisher:
+                    _send_next_task(config, next_task, publisher)
 
             except Exception as e:
                 tm.fail(task, str(e))
 
     finally:
         consumer.close()
-        publisher.close()
+        if publisher:
+            publisher.close()
         feishu.close()
         logger.info("[{}] Worker 已关闭", task_type)
+
+
+def _send_next_task(config: AppConfig, next_task: Task, default_pub: ZmqPublisher | None) -> None:
+    """根据 next_task.task_type 找到目标 worker 的 pull_endpoint 并发送。"""
+    if default_pub is None:
+        return
+    next_cfg = _get_worker_config(config, next_task.task_type)
+    if next_cfg.pull_endpoint == default_pub._endpoint:
+        default_pub.send_task(next_task)
+    else:
+        # 分流到不同 worker（如 knowledge → 5557 而非 analyze 的 5554）
+        target = ZmqPublisher(next_cfg.pull_endpoint)
+        try:
+            target.send_task(next_task)
+        finally:
+            target.close()
 
 
 def _get_worker_config(config: AppConfig, task_type: str) -> Any:
@@ -131,6 +150,7 @@ def _get_worker_config(config: AppConfig, task_type: str) -> Any:
         "extract_audio": config.extract_audio_worker,
         "transcribe": config.transcribe_worker,
         "analyze": config.analyze_worker,
+        "knowledge": config.knowledge_worker,
         "dingtalk_push": config.dingtalk_worker,
     }
     cfg = cfg_map.get(task_type)

@@ -78,6 +78,14 @@ class AnalyzeWorkerConfig(WorkerConfig):
     extra_body: dict[str, object] = {}
 
 
+class KnowledgeWorkerConfig(WorkerConfig):
+    pull_endpoint: str = "tcp://127.0.0.1:5557"
+    push_endpoint: str = ""   # 终端阶段，无需 push
+    obsidian_vault: str = r"D:\docs\Obsidian"
+    model: str = ""      # 空则复用 analyze_worker.model
+    prompt: str = ""     # 空则用内置默认
+
+
 class DingTalkWorkerConfig(WorkerConfig):
     pull_endpoint: str = "tcp://127.0.0.1:5555"
     push_endpoint: str = "tcp://127.0.0.1:5556"
@@ -116,6 +124,7 @@ class AppConfig(BaseModel):
     extract_audio_worker: ExtractAudioWorkerConfig = ExtractAudioWorkerConfig()
     transcribe_worker: TranscribeWorkerConfig = TranscribeWorkerConfig()
     analyze_worker: AnalyzeWorkerConfig = AnalyzeWorkerConfig()
+    knowledge_worker: KnowledgeWorkerConfig = KnowledgeWorkerConfig()
     dingtalk_worker: DingTalkWorkerConfig = DingTalkWorkerConfig()
     patrol_worker: PatrolWorkerConfig = PatrolWorkerConfig()
     secrets: SecretConfig | None = None

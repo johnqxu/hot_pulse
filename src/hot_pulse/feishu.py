@@ -36,6 +36,7 @@ _STAGE_INPUT_MAP: dict[str, dict[str, str]] = {
     "extract_audio": {"video_file": "视频文件地址"},
     "transcribe": {"audio_file": "音频文件地址"},
     "analyze": {"text_file": "文字文件地址"},
+    "knowledge": {"text_file": "文字文件地址"},
     "dingtalk_push": {"report_file": "分析报告地址"},
 }
 

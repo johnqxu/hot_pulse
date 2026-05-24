@@ -58,6 +58,12 @@ analyze_worker:
     thinking:                        # DeepSeek V4 thinking 模式开关
       type: "enabled"                # "enabled"（开启）/ "disabled"（关闭），思考模式下不支持 temperature
 
+knowledge_worker:
+  pull_endpoint: "tcp://127.0.0.1:5557"
+  obsidian_vault: "D:\\docs\\Obsidian"
+  model: ""           # 留空复用 analyze_worker 的 model
+  prompt: ""          # 留空使用内置默认知识提炼 Prompt
+
 dingtalk_worker:
   pull_endpoint: "tcp://127.0.0.1:5555"
   push_endpoint: "tcp://127.0.0.1:5556"

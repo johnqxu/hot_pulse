@@ -17,6 +17,7 @@ _WORKERS = [
     "hot_pulse.extract_audio_worker",
     "hot_pulse.transcribe_worker",
     "hot_pulse.analyze_worker",
+    "hot_pulse.knowledge_worker",
     "hot_pulse.dingtalk_worker",
     "hot_pulse.patrol_worker",
 ]
