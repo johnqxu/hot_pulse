@@ -100,6 +100,8 @@ def _download_via_ytdlp(
                 "--merge-output-format", "mp4",
                 "-o", output_template,
                 "--no-playlist",
+                "--user-agent",
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
                 source_url,
             ],
             capture_output=True,
@@ -121,11 +123,63 @@ def _download_via_ytdlp(
     return str(dest)
 
 
+def _download_via_tikhub_weixin(task: Task, download_dir: str) -> str:
+    """通过 TikHub API 下载微信视频号加密视频并解密。
+
+    从 Task.inputs 读取 encrypted_url, url_token, decode_key，
+    下载加密视频后 AES 解密并保存为 mp4。
+    """
+    encrypted_url = task.inputs.get("encrypted_url", "")
+    url_token = task.inputs.get("url_token", "")
+    decode_key = task.inputs.get("decode_key", "")
+
+    if not encrypted_url or not decode_key:
+        raise RuntimeError("weixin 任务缺少 encrypted_url 或 decode_key")
+
+    full_url = encrypted_url + url_token
+    logger.info("微信视频号下载: video_id={}, url={}...", task.video_id, full_url[:80])
+
+    dest = Path(download_dir) / f"{task.video_id}.mp4"
+    dir_path = Path(download_dir)
+    dir_path.mkdir(parents=True, exist_ok=True)
+
+    try:
+        # 下载加密视频
+        with httpx.stream("GET", full_url, timeout=300.0, follow_redirects=True) as resp:
+            resp.raise_for_status()
+            encrypted_data = b""
+            for chunk in resp.iter_bytes(chunk_size=65536):
+                encrypted_data += chunk
+
+        # AES 解密
+        from Crypto.Cipher import AES
+        key = bytes.fromhex(decode_key)
+        cipher = AES.new(key, AES.MODE_CBC, iv=key[:16])
+        decrypted_data = cipher.decrypt(encrypted_data)
+
+        # 去掉 PKCS7 padding
+        pad_len = decrypted_data[-1]
+        if 0 < pad_len <= 16:
+            decrypted_data = decrypted_data[:-pad_len]
+
+        dest.write_bytes(decrypted_data)
+
+    except Exception:
+        if dest.exists():
+            dest.unlink()
+        raise
+
+    size_mb = dest.stat().st_size / (1024 * 1024)
+    logger.info("微信视频号下载解密完成: video_id={}, size={:.1f}MB", task.video_id, size_mb)
+    return str(dest)
+
+
 def handle_download(task: Task, config: AppConfig) -> dict[str, Any]:
     """Download worker 的业务 handler。
 
-    - source="manual": 用 yt-dlp 下载（处理 B站 等平台的 DASH 音视频分离）
-    - source="subscription": 用 httpx 直链下载（TikTok 管道）
+    - source="manual" + platform="weixin": TikHub API 下载解密
+    - source="manual": yt-dlp 下载（DASH 合并）
+    - source="subscription": httpx 直链下载（TikTok 管道）
     """
     download_dir = config.download_worker.download_dir
 
@@ -134,6 +188,11 @@ def handle_download(task: Task, config: AppConfig) -> dict[str, Any]:
     if expected_path.exists() and expected_path.stat().st_size > 0:
         logger.info("视频已存在，跳过下载: video_id={}", task.video_id)
         return {"video_file": str(expected_path)}
+
+    # manual + weixin: TikHub API 下载解密
+    if task.source == "manual" and task.platform == "weixin":
+        video_file = _download_via_tikhub_weixin(task, download_dir)
+        return {"video_file": video_file}
 
     # manual 任务：用 yt-dlp 下载（处理 DASH 合并）
     if task.source == "manual":

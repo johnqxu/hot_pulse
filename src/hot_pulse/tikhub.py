@@ -148,5 +148,46 @@ class TikHubClient:
         logger.debug(f"TikHub 返回 {len(videos)} 条视频 (endpoint={endpoint})")
         return videos
 
+    def fetch_weixin_video_detail(self, export_id: str) -> dict[str, str]:
+        """通过 TikHub API 获取微信视频号视频详情。
+
+        返回: {title, video_id, uploader, encrypted_url, url_token, decode_key}
+        """
+        resp = self._client.get(
+            "/api/v1/wechat_channels/fetch_video_detail",
+            params={"exportId": export_id},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+        obj_desc = data.get("data", {}).get("object_desc", {})
+        title = obj_desc.get("description", "") or obj_desc.get("title", "")
+        uploader = data.get("data", {}).get("finder", {}).get("nickname", "")
+        video_id = export_id
+
+        media_list = obj_desc.get("media", [])
+        encrypted_url = ""
+        url_token = ""
+        decode_key = ""
+        if media_list:
+            m = media_list[0]
+            encrypted_url = m.get("url", "")
+            url_token = m.get("url_token", "")
+            decode_key = m.get("decode_key", "")
+
+        if not encrypted_url or not decode_key:
+            raise RuntimeError(
+                f"TikHub 微信 API 未返回有效视频信息: {data}"
+            )
+
+        return {
+            "title": title,
+            "video_id": video_id,
+            "uploader": uploader,
+            "encrypted_url": encrypted_url,
+            "url_token": url_token,
+            "decode_key": decode_key,
+        }
+
     def close(self) -> None:
         self._client.close()
