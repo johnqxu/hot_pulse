@@ -77,7 +77,7 @@ def handle_knowledge(task: Task, config: AppConfig) -> dict[str, Any]:
         config.analyze_worker.model = config.knowledge_worker.model
 
     try:
-        response = _call_llm_api(text, config)
+        response = _call_llm_api(text, config, prompt)
     finally:
         config.analyze_worker.model = saved_model
 

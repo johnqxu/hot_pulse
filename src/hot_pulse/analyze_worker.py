@@ -55,14 +55,17 @@ _DEFAULT_PROMPT = """\
 # LLM API 调用
 # ---------------------------------------------------------------------------
 
-def _call_llm_api(text: str, config: AppConfig) -> str:
-    """调用 OpenAI 兼容的 chat/completions 接口，返回完整响应文本。"""
+def _call_llm_api(text: str, config: AppConfig, prompt: str = "") -> str:
+    """调用 OpenAI 兼容的 chat/completions 接口，返回完整响应文本。
+
+    prompt 参数可选：传入时优先使用，否则回退到 config.analyze_worker.prompt。
+    """
     api_key = config.secrets.openai_api_key if config.secrets else ""
     if not api_key:
         raise RuntimeError("OPENAI_API_KEY 未配置，请在 .env 中设置")
 
     model = config.analyze_worker.model
-    prompt = config.analyze_worker.prompt or _DEFAULT_PROMPT
+    prompt = prompt or config.analyze_worker.prompt or _DEFAULT_PROMPT
 
     payload: dict[str, object] = {
         "model": model,

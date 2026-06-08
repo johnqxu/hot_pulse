@@ -52,6 +52,7 @@ def _record_to_task(fields: dict, record_id: str, task_type: str) -> Task | None
     creator = _extract_text(fields.get("博主", ""))
     title = _extract_text(fields.get("任务名", ""))
     platform = _extract_text(fields.get("平台", "")) or "抖音"
+    source = _extract_text(fields.get("来源", "")) or "subscription"
 
     # 构建 inputs
     inputs: dict[str, Any] = {}
@@ -74,6 +75,7 @@ def _record_to_task(fields: dict, record_id: str, task_type: str) -> Task | None
         creator=creator,
         title=title,
         platform=platform,
+        source=source,
         feishu_record_id=record_id,
         inputs=inputs,
     )
