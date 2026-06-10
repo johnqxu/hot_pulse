@@ -52,6 +52,8 @@ def _resolve_url(url: str) -> tuple[str, str]:
         result = subprocess.run(
             [
                 "yt-dlp", "--dump-json", "--no-playlist",
+                "--add-header", "Referer: https://www.bilibili.com",
+                "--add-header", "Origin: https://www.bilibili.com",
                 "--user-agent",
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
                 url,

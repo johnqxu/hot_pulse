@@ -21,23 +21,23 @@ schedule:
   interval_minutes: 59
 
 download_worker:
-  download_dir: "D:\\batch\\video"
+  download_dir: "/home/xu/workspace/batch/video"
   url_priority:
     "*.amemv.com": 10
     "v26-web.douyinvod.com": 5
     "v3-search.douyinvod.com": 0
 
 extract_audio_worker:
-  audio_dir: "D:\\batch\\audio"
+  audio_dir: "/home/xu/workspace/batch/audio"
 
 transcribe_worker:
-  text_dir: "D:\\batch\\text"
-  model_dir: "D:\\batch\\whisper-model"
+  text_dir: "/home/xu/workspace/batch/text"
+  model_dir: "/home/xu/workspace/batch/whisper-model"
   model_size: "medium"
   device: "gpu"
 
 analyze_worker:
-  report_dir: "D:\\docs\\财经\\02-市场分析\\视频分析报告"
+  report_dir: "/home/xu/obsidian-vault/财经/02-市场分析/视频分析报告"
   model: "deepseek-v4-flash"          # LLM 模型 ID，也可改为 deepseek-v4-pro / glm-5.1 等
   # prompt: ""                        # 留空则使用内置默认 prompt（财经分析师）
   openai_base_url: "https://api.deepseek.com/v1"  # OpenAI 兼容 API 基础 URL，不含 /chat/completions
@@ -47,7 +47,7 @@ analyze_worker:
       type: "enabled"                # "enabled"（开启）/ "disabled"（关闭），思考模式下不支持 temperature
 
 knowledge_worker:
-  obsidian_vault: "D:\\docs\\Obsidian"
+  obsidian_vault: "/home/xu/obsidian-vault"
   model: ""           # 留空复用 analyze_worker 的 model
   prompt: ""          # 留空使用内置默认知识提炼 Prompt
 
