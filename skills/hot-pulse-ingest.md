@@ -41,7 +41,7 @@ platforms:
 ### 2. 执行命令
 
 ```bash
-cd D:/workspace/hot_pulse && uv run python -m hot_pulse ingest \
+cd D:/workspace/hot_pulse && uv run hot-pulse-ingest \
   --type video \
   --platform bilibili \
   --url "<提取的URL>" \
@@ -63,7 +63,7 @@ cd D:/workspace/hot_pulse && uv run python -m hot_pulse ingest \
 ### 微信视频号
 
 ```bash
-cd D:/workspace/hot_pulse && uv run python -m hot_pulse ingest \
+cd D:/workspace/hot_pulse && uv run hot-pulse-ingest \
   --type video \
   --platform weixin \
   --url "<微信视频号 sph 链接>" \

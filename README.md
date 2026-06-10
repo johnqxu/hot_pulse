@@ -5,26 +5,24 @@
 ## 流水线架构
 
 ```
-监控发现 → 视频下载 → 音频提取 → 文字转写 → 内容分析 → 钉钉推送
- monitor    download   extract_audio  transcribe   analyze   dingtalk_push
-  (定时)    (常驻)      (常驻)        (常驻)       (常驻)     (常驻)
-    │         │           │            │            │          │
-    └─ZMQ──→ 5551 ──→ 5552 ──→ 5553 ──→ 5554 ──→ 5555 ──→ 5556
+监控发现 → 视频下载 → 音频提取 → 文字转写 → 内容分析 → 钉钉推送 → 知识整理
+ monitor    download   extract_audio  transcribe   analyze   dingtalk   knowledge
+  (定时)     (串行)     (串行)        (串行)       (串行)     (串行)      (手动)
 ```
 
-- **ZMQ PUSH/PULL**: 流水线各阶段间的实时消息传递
+- **单进程串行管道**: 视频发现后按顺序依次执行各阶段，无需消息队列
 - **飞书多维表格**: 唯一持久化状态存储，记录每条视频的处理进度和结果
-- **Worker 启动恢复**: 每个 worker 启动时自动从飞书查询未完成任务，继续处理
+- **启动恢复**: Worker 启动时自动从飞书查询中断任务，从上次失败阶段继续
 
 ## 技术栈
 
 - Python 3.10+, 包管理 [uv](https://github.com/astral-sh/uv)
 - httpx (同步), pydantic-settings, python-dotenv, loguru, pyyaml
-- ZeroMQ (pyzmq): 流水线消息通信
 - ffmpeg CLI: 音频提取
 - OpenVINO + optimum-intel (Intel GPU) / faster-whisper (CPU 降级): 音频转写
 - OpenAI 兼容 LLM API（DeepSeek 等）: 内容分析报告生成
 - 钉钉自定义机器人 Webhook: Markdown 报告推送
+- yt-dlp: 第三方视频链接解析
 
 ## 快速开始
 
@@ -34,9 +32,44 @@
 # 使用 uv
 uv sync
 
-# GPU 加速（Intel GPU）
+# GPU 加速（Intel GPU，需额外安装系统运行时）
 uv sync --extra gpu
 ```
+
+#### GPU 加速配置（Intel GPU）
+
+> 仅支持 Intel 集成显卡 / 独立显卡（Iris Xe、Arc 等），不支持 NVIDIA/AMD GPU。
+
+**Arch Linux：**
+
+```bash
+# 1. 安装系统 GPU 计算运行时
+sudo pacman -S intel-compute-runtime level-zero-loader
+
+# 2. 将用户加入 render 组（获取 /dev/dri/render* 访问权限）
+sudo usermod -a -G render $USER
+
+# 3. 重新登录使组生效
+```
+
+**验证 OpenVINO 能否识别 GPU：**
+
+```bash
+uv run python -c "from openvino.runtime import Core; print('可用设备:', Core().available_devices)"
+```
+
+期望输出包含 `GPU`：`可用设备: ['CPU', 'GPU']`。
+
+**如果 GPU 未出现，常见原因：**
+
+| 现象 | 可能原因 | 解决 |
+|------|----------|------|
+| `GPU` 不在可用设备列表 | 用户不在 `render` 组 | `sudo usermod -a -G render $USER` 并重新登录 |
+| `GPU` 不在可用设备列表 | `intel-compute-runtime` 未安装 | `sudo pacman -S intel-compute-runtime` |
+| `optimum.intel` 导入失败 | GPU Python 依赖未安装 | `uv sync --extra gpu` |
+| 启动日志出现 "GPU 模型加载失败" | 加载出错，自动降级 CPU | 查看 `loguru` 输出的 warning 详情 |
+
+**降级机制：** 代码在 `transcribe_worker.py` 中实现了双重降级——模型初始化失败或推理失败时，会自动回退到 CPU 的 `faster-whisper`，不会报错中断。
 
 ### 2. 配置
 
@@ -60,31 +93,50 @@ cp .env.example .env
 
 ### 3. 运行
 
+所有命令通过 `uv run` 执行，无需手动激活 venv。
+
 **一键启动（推荐）：**
 
 ```bash
-python -m hot_pulse.main
+uv run hot-pulse
+# 等价于: uv run python -m hot_pulse.main
 ```
 
-启动所有 worker 子进程，等待 30 秒后进入 monitor 定时调度（07:00-24:00，每 59 分钟一次）。按 `Ctrl+C` 优雅关闭。
+启动主进程，进入 monitor 定时调度（07:00-24:00，间隔由 `schedule.interval_minutes` 决定）。按 `Ctrl+C` 优雅关闭。
 
-**独立运行单个 worker：**
-
-```bash
-python -m hot_pulse.download_worker
-python -m hot_pulse.extract_audio_worker
-python -m hot_pulse.transcribe_worker
-python -m hot_pulse.analyze_worker
-python -m hot_pulse.dingtalk_worker
-```
-
-**独立运行 monitor：**
+**独立运行 monitor（单轮）：**
 
 ```bash
-python -m hot_pulse.monitor
+uv run hot-pulse-monitor
+# 等价于: uv run python -m hot_pulse.monitor
 ```
 
 可配合系统 cron 或 OpenClaw 定时调度。
+
+**手动提交视频（ingest）：**
+
+```bash
+uv run hot-pulse-ingest \
+  --type video \
+  --platform bilibili \
+  --url "https://www.bilibili.com/video/BV1xxx" \
+  --notes "可选备注"
+
+# 微信视频号
+uv run hot-pulse-ingest \
+  --type video \
+  --platform weixin \
+  --url "https://weixin.qq.com/sph/xxx"
+```
+
+**巡检 Worker：**
+
+```bash
+uv run hot-pulse-patrol
+# 等价于: uv run python -m hot_pulse.patrol_worker
+```
+
+> **提示**: 所有 `uv run <脚本名>` 命令都可以用 `uv run python -m hot_pulse.<模块>` 作为等价替代。两者的区别是前者由 `pyproject.toml` 的 `[project.scripts]` 注册，Tab 补全更友好。
 
 ## 配置说明
 
@@ -133,22 +185,23 @@ dingtalk_worker:
 
 ```
 src/hot_pulse/
-├── main.py                # 主进程编排器，一键启动所有 worker + 定时 monitor
-├── monitor.py             # 监控：TikHub → 飞书记录 + ZMQ 推送
-├── worker_base.py         # Worker 通用基座（主循环、信号处理、启动恢复）
-├── download_worker.py     # 视频下载
-├── extract_audio_worker.py # 音频提取（ffmpeg）
-├── transcribe_worker.py   # 音频转文字（Whisper）
-├── analyze_worker.py      # 内容分析（LLM API → Markdown 报告）
-├── dingtalk_worker.py     # 钉钉群消息推送
-├── task.py                # Task 数据模型
-├── task_manager.py        # 任务状态流转 + 飞书同步
-├── feishu.py              # 飞书多维表格客户端
-├── tikhub.py              # TikHub API 客户端（主备降级）
-├── zmq_client.py          # ZMQ PUSH/PULL 封装
-├── config.py              # 配置模型与加载
-└── models.py              # 飞书记录数据模型
-```
+├── main.py                  # 主进程，定时调度 monitor + 启动恢复
+├── monitor.py               # 监控：TikHub → 飞书记录 + 串行管道
+├── pipeline.py              # 串行管道编排器，函数式调用各 handler
+├── ingest.py                # CLI 手动提交视频到管道处理
+├── download_worker.py       # 视频下载
+├── extract_audio_worker.py  # 音频提取（ffmpeg）
+├── transcribe_worker.py     # 音频转文字（Whisper）
+├── analyze_worker.py        # 内容分析（LLM API → Markdown 报告）
+├── knowledge_worker.py      # 知识整理（LLM → Obsidian 笔记）
+├── dingtalk_worker.py       # 钉钉群消息推送
+├── patrol_worker.py         # 巡检：检测僵尸任务并修复
+├── task.py                  # Task 数据模型
+├── task_manager.py          # 任务状态流转 + 飞书同步
+├── feishu.py                # 飞书多维表格客户端
+├── tikhub.py                # TikHub API 客户端（主备降级）
+├── config.py                # 配置模型与加载
+└── models.py                # 飞书记录数据模型
 
 ## 状态流转
 

@@ -1,17 +1,4 @@
-## ADDED Requirements
-
-### Requirement: 巡检 Worker 定时扫描
-
-系统 SHALL 提供巡检 Worker，按配置的间隔（默认 60 分钟）定时扫描飞书表格，检测需要恢复的任务。
-
-#### Scenario: 定时触发巡检
-- **WHEN** 距上次巡检已过 interval_minutes 分钟
-- **THEN** 系统 SHALL 执行一轮巡检扫描
-
-#### Scenario: 巡检扫描执行
-- **WHEN** 巡检触发
-- **THEN** 系统 SHALL 对每种 running_status 和 fail_status 分别查询飞书表格
-- **AND** 对查询到的记录逐条判断是否需要回退
+## MODIFIED Requirements
 
 ### Requirement: 僵尸任务检测与恢复
 
@@ -37,15 +24,10 @@
 - **AND** 构造 Task 对象，根据 Task.source 调用对应的 pipeline 函数恢复执行
 - **AND** 不再使用 ZMQ PUSH 发送任务
 
-### Requirement: 独立运行
+## REMOVED Requirements
 
-巡检 Worker SHALL 作为独立进程运行，通过 `python -m hot_pulse.patrol_worker` 启动。main.py 不再管理子进程（pipeline-executor 改动后已改为单进程）。
+### Requirement: ZMQ 多端口路由（临时，计划废弃）
 
-#### Scenario: 独立运行巡检
-- **WHEN** 执行 `python -m hot_pulse.patrol_worker`
-- **THEN** 巡检 Worker SHALL 独立启动并运行定时循环，不依赖 main.py
+**Reason**: pipeline-executor 改动后，系统已统一使用 `pipeline.run_subscription_pipeline()` 和 `pipeline.run_manual_pipeline()` 直接函数调用执行管道，不再需要 ZMQ 多进程路由。
 
-#### Scenario: 与 main.py 的关系
-- **WHEN** 系统部署
-- **THEN** patrol_worker 和 main.py SHALL 作为两个独立进程分别启动
-- **AND** main.py 负责 monitor 定时调度，patrol_worker 负责僵尸/失败任务恢复
+**Migration**: patrol_worker 恢复任务时直接调用 `pipeline.run_*_pipeline(task, config, start_stage)`，无需额外迁移步骤。已有的 ZMQ worker 进程（如果仍在运行）应手动停止。

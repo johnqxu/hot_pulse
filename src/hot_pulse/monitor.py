@@ -165,17 +165,17 @@ def _process_new_video(
         logger.error("视频处理失败: video_id={}, error={}", video.video_id, e)
 
 
-if __name__ == "__main__":
-    from loguru import logger as _logger
+def main() -> None:
+    """CLI 入口: 执行单轮监控并打印结果。"""
     import sys
 
-    _logger.remove()
-    _logger.add(sys.stderr, level="INFO", format="{time:HH:mm:ss} | {level} | <bold>[monitor]</bold> {message}")
+    logger.remove()
+    logger.add(sys.stderr, level="INFO", format="{time:HH:mm:ss} | {level} | <bold>[monitor]</bold> {message}")
 
     result = run_monitor()
 
     if result.errors:
-        print(f"\n--- 错误汇总 ---")
+        print("\n--- 错误汇总 ---")
         for err in result.errors:
             print(f"  - {err}")
 
@@ -185,3 +185,7 @@ if __name__ == "__main__":
         f" ({result.failed_creators} 失败)\n"
         f"  新视频: {result.total_new_videos} 个"
     )
+
+
+if __name__ == "__main__":
+    main()

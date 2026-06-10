@@ -23,6 +23,12 @@ dev = [
     "pytest>=8.0",
 ]
 
+[project.scripts]
+hot-pulse = "hot_pulse.main:main"
+hot-pulse-monitor = "hot_pulse.monitor:main"
+hot-pulse-ingest = "hot_pulse.ingest:main"
+hot-pulse-patrol = "hot_pulse.patrol_worker:main"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

@@ -78,19 +78,33 @@ def run_manual_pipeline(task: Task, config: AppConfig, start_stage: str = "") ->
     _run_stages(task, config, _MANUAL_STAGES, start_stage)
 
 
-# 飞书状态 → pipeline stage 恢复映射
-_STATUS_TO_STAGE: dict[str, str] = {
+# 飞书状态 → pipeline stage 恢复映射（包含 init/running/fail）
+STATUS_TO_STAGE: dict[str, str] = {
     "新视频": "download",
     "视频下载中": "download",
+    "视频下载失败": "download",
     "音频提取中": "extract_audio",
+    "音频提取失败": "extract_audio",
     "文字转写中": "transcribe",
+    "文字转写失败": "transcribe",
     "报告分析中": "analyze",
+    "报告分析失败": "analyze",
     "报告推送中": "dingtalk_push",
+    "报告推送失败": "dingtalk_push",
     "知识整理中": "knowledge",
+    "知识整理失败": "knowledge",
 }
 
-# 非终端状态集合（需要恢复的）
-_NON_TERMINAL_STATUSES = frozenset(_STATUS_TO_STAGE.keys())
+# 非终端状态集合（需要恢复的）：只包含 init/running 状态，不含 fail
+_NON_TERMINAL_STATUSES = frozenset({
+    "新视频",
+    "视频下载中",
+    "音频提取中",
+    "文字转写中",
+    "报告分析中",
+    "报告推送中",
+    "知识整理中",
+})
 
 
 def recover_interrupted_tasks(config: AppConfig) -> int:
@@ -100,7 +114,8 @@ def recover_interrupted_tasks(config: AppConfig) -> int:
     feishu = FeishuClient(config)
     tasks: list[Task] = []
     try:
-        for status, stage in _STATUS_TO_STAGE.items():
+        for status in _NON_TERMINAL_STATUSES:
+            stage = STATUS_TO_STAGE[status]
             fetched = feishu.query_records_by_status(status, stage)
             tasks.extend(fetched)
     finally:
@@ -113,7 +128,7 @@ def recover_interrupted_tasks(config: AppConfig) -> int:
     logger.info("启动恢复: 发现 {} 个中断任务", len(tasks))
     recovered = 0
     for task in tasks:
-        start_stage = _STATUS_TO_STAGE.get(task.status, "")
+        start_stage = STATUS_TO_STAGE.get(task.status, "")
         if not start_stage:
             continue
         try:

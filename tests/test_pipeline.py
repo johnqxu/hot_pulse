@@ -250,12 +250,12 @@ def test_pipeline_can_start_from_middle(monkeypatch):
 
 def test_status_to_stage_mapping():
     """验证飞书状态到 pipeline stage 的映射正确。"""
-    from hot_pulse.pipeline import _STATUS_TO_STAGE
+    from hot_pulse.pipeline import STATUS_TO_STAGE
 
-    assert _STATUS_TO_STAGE["新视频"] == "download"
-    assert _STATUS_TO_STAGE["视频下载中"] == "download"
-    assert _STATUS_TO_STAGE["音频提取中"] == "extract_audio"
-    assert _STATUS_TO_STAGE["文字转写中"] == "transcribe"
-    assert _STATUS_TO_STAGE["报告分析中"] == "analyze"
-    assert _STATUS_TO_STAGE["报告推送中"] == "dingtalk_push"
-    assert _STATUS_TO_STAGE["知识整理中"] == "knowledge"
+    assert STATUS_TO_STAGE["新视频"] == "download"
+    assert STATUS_TO_STAGE["视频下载中"] == "download"
+    assert STATUS_TO_STAGE["音频提取中"] == "extract_audio"
+    assert STATUS_TO_STAGE["文字转写中"] == "transcribe"
+    assert STATUS_TO_STAGE["报告分析中"] == "analyze"
+    assert STATUS_TO_STAGE["报告推送中"] == "dingtalk_push"
+    assert STATUS_TO_STAGE["知识整理中"] == "knowledge"

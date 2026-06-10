@@ -1,82 +1,61 @@
+"""巡检 Worker — 定时扫描飞书表格中的僵尸/失败任务并恢复执行。
+
+直接调用 pipeline 函数恢复任务，不依赖 ZMQ。
+作为独立进程运行：python -m hot_pulse.patrol_worker
+"""
+
 from __future__ import annotations
 
 import signal
 import sys
 import time
-import uuid
 from datetime import datetime
 from typing import Any
 
-import zmq
 from loguru import logger
 
 from hot_pulse.config import AppConfig, load_config
-from hot_pulse.feishu import FeishuClient, _extract_text
-from hot_pulse.task import Task
+from hot_pulse.feishu import FeishuClient, _record_to_task
+from hot_pulse.pipeline import (
+    STATUS_TO_STAGE,
+    run_manual_pipeline,
+    run_subscription_pipeline,
+)
 from hot_pulse.task_manager import STAGE_MAPPING
 
 
 # ---------------------------------------------------------------------------
-# 反向映射：running_status / fail_status → (task_type, init_status, start_field)
+# 僵尸检测
 # ---------------------------------------------------------------------------
 
-_StageReverse = tuple[str, str, str]  # (task_type, init_status, start_field)
 
-
-def _build_reverse_map() -> dict[str, _StageReverse]:
-    """从 STAGE_MAPPING 构建 running/fail status 的反向索引。"""
-    result: dict[str, _StageReverse] = {}
-    for task_type, cfg in STAGE_MAPPING.items():
-        result[cfg.running_status] = (task_type, cfg.init_status, cfg.start_field)
-        result[cfg.fail_status] = (task_type, cfg.init_status, cfg.start_field)
-    return result
-
-
-STAGE_REVERSE = _build_reverse_map()
+def _is_zombie(fields: dict, start_field: str, threshold_minutes: int) -> bool:
+    """检查 start_field 时间戳是否超过阈值。"""
+    start_ts = fields.get(start_field, 0)
+    if isinstance(start_ts, (int, float)) and start_ts > 0:
+        start_time = datetime.fromtimestamp(start_ts / 1000)
+        elapsed = (datetime.now() - start_time).total_seconds() / 60
+        return elapsed > threshold_minutes
+    # 无时间戳也视为僵尸（异常状态）
+    return True
 
 
 # ---------------------------------------------------------------------------
-# ZMQ 路由：task_type → PUSH socket
+# 飞书查询
 # ---------------------------------------------------------------------------
 
-def _build_push_routes(config: AppConfig) -> dict[str, zmq.Socket]:
-    """为每种 task_type 创建 PUSH socket 连接到对应 worker 的 pull_endpoint。"""
-    ctx = zmq.Context()
-    routes: dict[str, zmq.Socket] = {
-        "download": config.download_worker.pull_endpoint,
-        "extract_audio": config.extract_audio_worker.pull_endpoint,
-        "transcribe": config.transcribe_worker.pull_endpoint,
-        "analyze": config.analyze_worker.pull_endpoint,
-        "dingtalk_push": config.dingtalk_worker.pull_endpoint,
-    }
-    sockets: dict[str, zmq.Socket] = {}
-    for task_type, endpoint in routes.items():
-        sock = ctx.socket(zmq.PUSH)
-        sock.set_hwm(100)
-        sock.connect(endpoint)
-        sockets[task_type] = sock
-        logger.info("PUSH socket 已连接: {} → {}", task_type, endpoint)
-    return sockets
 
-
-def _close_push_routes(sockets: dict[str, zmq.Socket]) -> None:
-    for task_type, sock in sockets.items():
-        sock.close(linger=1000)
-    logger.info("所有 PUSH socket 已关闭")
-
-
-# ---------------------------------------------------------------------------
-# 巡检逻辑
-# ---------------------------------------------------------------------------
-
-def _query_records_by_status(feishu: FeishuClient, status: str) -> list[dict]:
-    """查询飞书表格中指定状态的记录，返回原始字段列表。"""
+def _query_records_by_status(
+    feishu: FeishuClient, status: str
+) -> list[tuple[str, dict]]:
+    """查询飞书表格中指定状态的记录，返回 (record_id, fields) 列表。"""
     feishu._ensure_token()
     url = (
         f"https://open.feishu.cn/open-apis/bitable/v1/apps/{feishu._app_token}"
         f"/tables/{feishu._table_id}/records/search"
     )
-    all_items: list[dict] = []
+
+    all_items: list[tuple[str, dict]] = []
     page_token: str | None = None
 
     while True:
@@ -105,7 +84,11 @@ def _query_records_by_status(feishu: FeishuClient, status: str) -> list[dict]:
             return all_items
 
         items = data.get("data", {}).get("items") or []
-        all_items.extend(items)
+        for item in items:
+            record_id = item.get("record_id", "")
+            fields = item.get("fields", {})
+            if record_id and fields:
+                all_items.append((record_id, fields))
 
         page_token = data.get("data", {}).get("page_token")
         if not page_token:
@@ -114,101 +97,72 @@ def _query_records_by_status(feishu: FeishuClient, status: str) -> list[dict]:
     return all_items
 
 
-def _is_zombie(fields: dict, start_field: str, threshold_minutes: int) -> bool:
-    """检查 start_field 时间戳是否超过阈值。"""
-    start_ts = fields.get(start_field, 0)
-    if isinstance(start_ts, (int, float)) and start_ts > 0:
-        start_time = datetime.fromtimestamp(start_ts / 1000)
-        elapsed = (datetime.now() - start_time).total_seconds() / 60
-        return elapsed > threshold_minutes
-    # 无时间戳也视为僵尸（异常状态）
-    return True
-
-
-def _build_task_from_record(fields: dict, record_id: str, task_type: str) -> Task:
-    """从飞书记录构造 Task 对象。"""
-    from hot_pulse.feishu import _STAGE_INPUT_MAP
-
-    video_id = _extract_text(fields.get("视频ID", ""))
-    creator = _extract_text(fields.get("博主", ""))
-    title = _extract_text(fields.get("任务名", ""))
-    platform = _extract_text(fields.get("平台", "")) or "抖音"
-
-    inputs: dict[str, Any] = {}
-    input_map = _STAGE_INPUT_MAP.get(task_type, {})
-    for key, feishu_field in input_map.items():
-        value = _extract_text(fields.get(feishu_field, ""))
-        if value:
-            if key == "play_urls":
-                import json
-                try:
-                    inputs[key] = json.loads(value)
-                except (json.JSONDecodeError, TypeError):
-                    inputs[key] = [value]
-            else:
-                inputs[key] = value
-
-    return Task(
-        task_id=str(uuid.uuid4()),
-        task_type=task_type,
-        video_id=video_id,
-        creator=creator,
-        title=title,
-        platform=platform,
-        feishu_record_id=record_id,
-        inputs=inputs,
-    )
+# ---------------------------------------------------------------------------
+# 巡检逻辑
+# ---------------------------------------------------------------------------
 
 
 def run_patrol(config: AppConfig) -> int:
     """执行一轮巡检。返回恢复的任务数。"""
     feishu = FeishuClient(config)
-    sockets = _build_push_routes(config)
     threshold = config.patrol_worker.zombie_threshold_minutes
     recovered = 0
 
     try:
-        for status, (task_type, init_status, start_field) in STAGE_REVERSE.items():
-            is_running = status in {cfg.running_status for cfg in STAGE_MAPPING.values()}
+        # STATUS_TO_STAGE 去重迭代：同一 stage 可能对应多个状态
+        seen_stages: set[str] = set()
+        for status, stage in STATUS_TO_STAGE.items():
+            if stage in seen_stages:
+                continue
+            seen_stages.add(stage)
+
+            cfg = STAGE_MAPPING.get(stage)
+            if cfg is None:
+                continue
 
             items = _query_records_by_status(feishu, status)
             if not items:
                 continue
 
-            logger.info("状态 '{}' 查到 {} 条记录", status, len(items))
+            logger.info("状态 '{}' → stage={} 查到 {} 条记录", status, stage, len(items))
 
-            for item in items:
-                record_id = item.get("record_id", "")
-                fields = item.get("fields", {})
-
+            for record_id, fields in items:
                 # running 状态需要检查是否超时
-                if is_running and not _is_zombie(fields, start_field, threshold):
+                is_fail = "失败" in status
+                if not is_fail and not _is_zombie(fields, cfg.start_field, threshold):
                     continue
 
-                # 回退飞书状态
+                # 回退飞书状态 → init_status
                 try:
-                    feishu.update_record(record_id, {"状态": init_status})
+                    feishu.update_record(record_id, {"状态": cfg.init_status})
                     logger.info(
                         "回退: record_id={}, '{}' → '{}'",
-                        record_id, status, init_status,
+                        record_id, status, cfg.init_status,
                     )
                 except Exception as exc:
                     logger.warning("飞书回退失败: record_id={}, error={}", record_id, exc)
                     continue
 
-                # 构造 Task 并推送
-                task = _build_task_from_record(fields, record_id, task_type)
-                sock = sockets.get(task_type)
-                if sock:
-                    try:
-                        sock.send(task.model_dump_json().encode("utf-8"), flags=zmq.NOBLOCK)
-                        logger.info("推送: task_type={}, video_id={}", task_type, task.video_id)
-                    except Exception as exc:
-                        logger.warning("ZMQ 推送失败: task_type={}, error={}", task_type, exc)
+                # 构造 Task 并调用 pipeline
+                task = _record_to_task(fields, record_id, stage)
+                if task is None:
+                    logger.warning("无法构造 Task: record_id={}", record_id)
+                    continue
+
+                try:
+                    if task.source == "manual":
+                        run_manual_pipeline(task, config, start_stage=stage)
+                    else:
+                        run_subscription_pipeline(task, config, start_stage=stage)
+                    logger.info("恢复完成: video_id={}, stage={}", task.video_id, stage)
+                except Exception as exc:
+                    logger.error(
+                        "pipeline 恢复失败: video_id={}, stage={}, error={}",
+                        task.video_id, stage, exc,
+                    )
 
                 recovered += 1
     finally:
-        _close_push_routes(sockets)
         feishu.close()
 
     return recovered
@@ -253,9 +207,14 @@ def main_loop(config_path: str = "config.yaml") -> None:
     logger.info("巡检 Worker 已关闭")
 
 
-if __name__ == "__main__":
+def main() -> None:
+    """CLI 入口: 启动巡检 Worker 主循环。"""
     logger.remove()
     logger.add(sys.stderr, level="INFO",
                format="{time:HH:mm:ss} | {level} | <light-black>[patrol]</light-black> {message}")
 
     main_loop()
+
+
+if __name__ == "__main__":
+    main()

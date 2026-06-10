@@ -8,8 +8,12 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
+
+# 强制无缓冲输出，避免管道环境下输出延迟
+sys.stdout.reconfigure(line_buffering=True)  # type: ignore[attr-defined]
 
 
 def _run(desc: str, cmd: list[str]) -> bool:
@@ -36,11 +40,11 @@ def step1_check_openvino() -> bool:
 
 
 def step2_install_openvino() -> bool:
-    """安装 openvino。"""
+    """安装 openvino (通过 uv)。"""
     print("\n[Step 2] 安装 openvino")
     return _run(
-        "pip install openvino -i https://mirrors.aliyun.com/pypi/simple/",
-        [sys.executable, "-m", "pip", "install", "openvino", "-i", "https://mirrors.aliyun.com/pypi/simple/"],
+        "uv sync --extra gpu",
+        ["uv", "sync", "--extra", "gpu"],
     )
 
 
@@ -48,13 +52,16 @@ def step3_check_openvino_devices() -> None:
     """列出 OpenVINO 可用设备。"""
     print("\n[Step 3] 检查 OpenVINO 可用设备")
     try:
-        from openvino.runtime import Core
+        from openvino import Core
         core = Core()
         devices = core.available_devices
         print(f"  可用设备: {devices}")
         for dev in devices:
-            name = core.get_property(dev, "FULL_DEVICE_NAME")
-            print(f"  - {dev}: {name}")
+            try:
+                name = core.get_property(dev, "FULL_DEVICE_NAME")
+                print(f"  - {dev}: {name}")
+            except Exception:
+                print(f"  - {dev}")
     except Exception as e:
         print(f"  检查失败: {e}")
 
@@ -62,16 +69,42 @@ def step3_check_openvino_devices() -> None:
 def step4_check_intel_gpu() -> None:
     """检查 Intel GPU 驱动。"""
     print("\n[Step 4] 检查 Intel GPU")
+    import platform
     try:
-        result = subprocess.run(
-            ["powershell", "-Command",
-             "Get-CimInstance -ClassName Win32_VideoController | "
-             "Select-Object Name, DriverVersion, Status | Format-List"],
-            capture_output=True, text=True,
-        )
-        print(result.stdout)
-        if result.stderr:
-            print(f"  stderr: {result.stderr[:500]}")
+        if platform.system() == "Windows":
+            result = subprocess.run(
+                ["powershell", "-Command",
+                 "Get-CimInstance -ClassName Win32_VideoController | "
+                 "Select-Object Name, DriverVersion, Status | Format-List"],
+                capture_output=True, text=True,
+            )
+            print(result.stdout)
+            if result.stderr:
+                print(f"  stderr: {result.stderr[:500]}")
+        else:
+            # Linux: check via lspci / sysfs
+            try:
+                result = subprocess.run(
+                    ["lspci", "-v"], capture_output=True, text=True, timeout=10
+                )
+                for line in result.stdout.splitlines():
+                    if "VGA" in line or "3D" in line or "Display" in line:
+                        print(f"  {line.strip()}")
+                if result.returncode != 0:
+                    raise FileNotFoundError
+            except FileNotFoundError:
+                # Fallback: check /sys/class/drm
+                import glob
+                cards = glob.glob("/sys/class/drm/card*")
+                for card in sorted(cards):
+                    try:
+                        with open(f"{card}/device/vendor") as f:
+                            vendor = f.read().strip()
+                        with open(f"{card}/device/device") as f:
+                            device = f.read().strip()
+                        print(f"  {card}: vendor={vendor}, device={device}")
+                    except OSError:
+                        print(f"  {card}")
     except Exception as e:
         print(f"  检查失败: {e}")
 
@@ -86,20 +119,28 @@ def step5_check_ctranslate2_backends() -> None:
         print("  ctranslate2 未安装")
         return
 
-    # 尝试创建一个简单的 ctranslate2 设备
+    # 检查 ctranslate2 支持的设备类型
     try:
-        import ctranslate2
-        # 检查 openvino 设备是否被 ctranslate2 识别
-        print("  测试 ctranslate2 设备支持...")
-        from ctranslate2 import StorageView
-        # 尝试在 openvino 设备上创建 tensor
-        try:
-            t = StorageView.zeros((1, 1), device="openvino")
-            print("  openvino 设备: 支持")
-        except Exception as e:
-            print(f"  openvino 设备: 不支持 ({e})")
+        from ctranslate2 import Device
+        supported = []
+        for attr in dir(Device):
+            if not attr.startswith("_"):
+                try:
+                    val = getattr(Device, attr)
+                    if not callable(val) and not isinstance(val, property):
+                        supported.append(attr)
+                except Exception:
+                    pass
+        print(f"  支持的设备: {supported if supported else '未知 (检查方式受限)'}")
+        if "cpu" in supported:
+            print("  - CPU: 支持")
+        if "cuda" in supported:
+            print("  - CUDA: 支持")
+        if "openvino" not in [s.lower() for s in supported]:
+            print("  - OpenVINO: ctranslate2 4.x 已移除 OpenVINO 后端，",
+                  "faster-whisper 将通过 OpenVINO 模型格式 (.xml) 方式使用")
     except Exception as e:
-        print(f"  测试失败: {e}")
+        print(f"  检查失败: {e}")
 
 
 def step6_test_faster_whisper_openvino() -> None:
@@ -108,20 +149,64 @@ def step6_test_faster_whisper_openvino() -> None:
     try:
         from faster_whisper import WhisperModel
 
-        # 使用 tiny 模型快速测试（很小，下载快）
-        print("  尝试加载 tiny 模型 (device=openvino)...")
-        try:
-            import os
-            if not os.environ.get("HF_ENDPOINT"):
-                os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+        # 显示 HF 配置
+        hf_endpoint = os.environ.get("HF_ENDPOINT", "")
+        print(f"  HF_ENDPOINT: {hf_endpoint or '(默认: huggingface.co)'}")
 
-            model = WhisperModel("tiny", device="openvino", compute_type="int8")
-            print("  -> OpenVINO 加速可用!")
+        # 检查本地已缓存的模型
+        import glob
+        hf_cache = os.path.expanduser("~/.cache/huggingface/hub")
+        cached_models = []
+        for snap_dir in glob.glob(f"{hf_cache}/models--*/snapshots/*/"):
+            model_bin = os.path.join(snap_dir, "model.bin")
+            if os.path.exists(model_bin):
+                # 提取模型名: models--Org--model-name -> Org/model-name
+                parts = snap_dir.split("/")
+                for p in parts:
+                    if p.startswith("models--"):
+                        name = p[len("models--"):].replace("--", "/", 1)
+                        cached_models.append(name)
+                        break
+        if cached_models:
+            print(f"  本地缓存模型: {cached_models}")
+
+        # 尝试加载模型
+        # 注意: ctranslate2 4.x 已移除 OpenVINO 后端（Device 仅含 cpu/cuda），
+        # faster-whisper 的 OpenVINO 支持现通过 OpenVINO 原生模型格式 (.xml) 实现
+        test_model = "tiny"
+        if cached_models:
+            # 优先使用已缓存的模型，提取 size 名
+            # e.g. "Systran/faster-whisper-medium" -> "medium"
+            raw = cached_models[0].split("/")[-1]  # "faster-whisper-medium"
+            size = raw.replace("faster-whisper-", "")  # "medium"
+            print(f"  本地缓存: {raw} (size={size})")
+            test_model = size
+        else:
+            print(f"  尝试下载 {test_model} 模型 (device=cpu, compute_type=int8)...")
+
+        model = None
+        try:
+            model = WhisperModel(test_model, device="cpu", compute_type="int8")
+            print("  -> CPU 模式可用!")
         except Exception as e:
-            print(f"  -> OpenVINO 不可用: {e}")
-            print("  尝试 CPU 模式...")
-            model = WhisperModel("tiny", device="cpu", compute_type="int8")
-            print("  -> CPU 模式可用")
+            print(f"  -> CPU 模型加载失败: {e}")
+            err_str = str(e)
+            if "Hub" in err_str or "snapshot" in err_str or "connection" in err_str.lower():
+                print("  提示: 网络无法访问 HuggingFace，设置 "
+                      "HF_ENDPOINT=https://hf-mirror.com 使用国内镜像")
+            return
+
+        # OpenVINO 格式测试
+        print(f"  尝试加载 OpenVINO 格式 {test_model} 模型 (device=openvino)...")
+        try:
+            model_ov = WhisperModel(test_model, device="openvino", compute_type="int8")
+            print("  -> OpenVINO 模式可用!")
+        except Exception as e:
+            err_msg = str(e)
+            if "Hub" in err_msg or "snapshot" in err_msg or "connection" in err_msg.lower():
+                print(f"  -> OpenVINO 模式需要下载额外文件（网络受限）")
+            else:
+                print(f"  -> OpenVINO 模式不可用: {err_msg[:300]}")
     except Exception as e:
         print(f"  测试失败: {e}")
 
