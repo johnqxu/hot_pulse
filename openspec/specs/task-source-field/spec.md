@@ -20,10 +20,10 @@ Task 模型支持 `source` 字段，标识视频任务来源（`"subscription"` 
 - **WHEN** 用户通过 OpenClaw Skill / CLI 手动提交视频
 - **THEN** 构造的 Task SHALL 带有 `source="manual"`
 
-#### Scenario: ZMQ 序列化兼容
-- **WHEN** Task 对象通过 ZMQ 序列化为 JSON
+#### Scenario: JSON 序列化兼容
+- **WHEN** Task 对象序列化为 JSON（如 pipeline 中传递、飞书存储）
 - **THEN** source 字段 SHALL 自动包含在 JSON 中
-- **AND** 下游 worker 反序列化后 SHALL 可读取 source 值
+- **AND** 下游 handler 反序列化后 SHALL 可读取 source 值（用于 download 分流和 transcribe 路由）
 
 #### Scenario: 向后兼容
 - **WHEN** 现有代码构造 Task 对象（monitor 之外）

@@ -25,7 +25,7 @@
 #### Scenario: 视频列表为空
 - **WHEN** TikHub API 返回成功但视频列表为空（创作者近期未发布新视频）
 - **THEN** monitor SHALL 将该创作者视为已处理完成，无新视频
-- **AND** 不向 ZMQ 推送任何任务
+- **AND** 不触发 pipeline
 
 ### Requirement: 通过对比已有记录检测新视频
 系统 SHALL 查询飞书多维表格中每个博主已有的视频 ID，计算差集以识别新发布的视频。
@@ -50,20 +50,21 @@
 - **THEN** 系统 SHALL 按照字段映射创建包含所有字段的记录
 - **AND** 飞书写入成功后，系统 SHALL 捕获飞书返回的 record_id
 - **AND** 系统 SHALL 构造 Task 对象（task_type="download"，feishu_record_id=record_id，inputs 包含 play_urls）
-- **AND** 通过 ZMQ PUSH 发送 Task
+- **AND** 调用 `run_subscription_pipeline(task, config)` 串行执行完整处理管道
 
 #### Scenario: 写入多条新视频
 - **WHEN** 检测到某个创作者有多条新视频
 - **THEN** 系统 SHALL 将每条视频分别写入飞书多维表格
+- **AND** 对每条新视频依次调用 `run_subscription_pipeline(task, config)`
 
 #### Scenario: 飞书 API 写入失败
 - **WHEN** 写入飞书多维表格失败
-- **THEN** 系统 SHALL 记录错误日志，且不为该记录发送 ZMQ 消息
+- **THEN** 系统 SHALL 记录错误日志，且不触发该视频的 pipeline
 - **AND** 继续处理剩余新视频
 - **AND** 系统 SHALL NOT 在下次运行时跳过已写入的记录（幂等性）
 
-#### Scenario: ZMQ 发送失败
-- **WHEN** 发送 ZMQ 消息失败（连接错误、超时）
+#### Scenario: Pipeline 执行失败
+- **WHEN** pipeline 某个阶段执行失败
 - **THEN** 系统 SHALL 记录错误日志但不阻塞监控工作流
 - **AND** 继续处理剩余新视频
 
@@ -86,13 +87,13 @@
 - **THEN** 系统 SHALL 记录创作者 A 的错误日志，继续处理创作者 B、C 等
 - **AND** 系统 SHALL 在结束时报告摘要，说明哪些创作者成功、哪些失败
 
-### Requirement: ZMQ 配置
-系统 SHALL 从 config.yaml 加载 ZMQ 配置，包括端点地址和启用标志。
+### Requirement: Pipeline 配置
+系统 SHALL 从 config.yaml 加载配置，monitor 直接调用 `run_subscription_pipeline()` 执行处理管道，无需 ZMQ 中间层。
 
-#### Scenario: ZMQ 已禁用
-- **WHEN** config.yaml 中 zeromq.enabled 设置为 false
-- **THEN** 系统 SHALL 跳过所有 ZMQ 操作，仅写入飞书
+#### Scenario: Pipeline 正常执行
+- **WHEN** monitor 完成飞书写入后调用 `run_subscription_pipeline(task, config)`
+- **THEN** 系统 SHALL 按 download → extract_audio → transcribe → analyze → dingtalk_push 顺序执行各阶段
 
-#### Scenario: ZMQ 配置缺失
-- **WHEN** config.yaml 不包含 zeromq 配置段
-- **THEN** 系统 SHALL 默认禁用 ZMQ，记录警告日志，以仅飞书模式继续运行
+#### Scenario: Pipeline 不可用时降级
+- **WHEN** pipeline 模块导入失败
+- **THEN** 系统 SHALL 记录错误日志，仅完成飞书写入（不触发后续处理）

@@ -1,6 +1,7 @@
-"""knowledge_worker — 通用知识整理 Worker。
+"""knowledge_worker — 通用知识整理 Handler。
 
-Pull ZMQ 5557，读取转写文本，调用 LLM 提炼结构化知识笔记，
+由 pipeline.run_manual_pipeline() 在 knowledge 阶段调用，
+读取转写文本，调用 LLM 提炼结构化知识笔记，
 写入 Obsidian vault 的 00-Inbox/ 目录。
 """
 

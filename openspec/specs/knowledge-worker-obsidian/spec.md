@@ -6,7 +6,7 @@
 
 ### Requirement: knowledge_worker handler
 
-系统 SHALL 提供 knowledge_worker，从 ZMQ 5557 拉取任务，读转写文本，调 LLM 生成知识笔记，写入 Obsidian vault。
+系统 SHALL 提供 `handle_knowledge(task, config)` handler，由 `pipeline.run_manual_pipeline()` 在 knowledge 阶段调用，读转写文本，调 LLM 生成知识笔记，写入 Obsidian vault。
 
 #### Scenario: 成功生成知识笔记
 - **WHEN** Task.inputs 包含 text_file 且文件存在
@@ -26,17 +26,16 @@
 
 ### Requirement: KnowledgeWorkerConfig
 
-系统 SHALL 提供 `KnowledgeWorkerConfig`，包含 `pull_endpoint`（默认 5557）、`obsidian_vault`（默认 `D:\docs\Obsidian`）、`prompt`（空则用内置默认）、`model`（空则复用 analyze_worker.model）。
+系统 SHALL 提供 `KnowledgeWorkerConfig`，包含 `obsidian_vault`（默认 `D:\docs\Obsidian`）、`prompt`（空则用内置默认）、`model`（空则复用 analyze_worker.model）。
 
 #### Scenario: 缺省值
 - **WHEN** config.yaml 中未配置 knowledge_worker 段
-- **THEN** pull_endpoint SHALL 默认为 `tcp://127.0.0.1:5557`
-- **AND** obsidian_vault SHALL 默认为 `D:\docs\Obsidian`
+- **THEN** obsidian_vault SHALL 默认为 `D:\docs\Obsidian`
 
-### Requirement: knowledge_worker 独立运行入口
+### Requirement: Knowledge Handler 调用方式
 
-系统 SHALL 支持 `python -m hot_pulse.knowledge_worker` 和 `main.py` 一键启动。
+`handle_knowledge(task, config)` SHALL 作为纯函数，由 `pipeline.run_manual_pipeline()` 在 knowledge 阶段调用。
 
-#### Scenario: CLI 启动
-- **WHEN** 用户执行 `python -m hot_pulse.knowledge_worker`
-- **THEN** 系统 SHALL 调用 `run_worker("knowledge", handle_knowledge)`
+#### Scenario: 被 pipeline 调用
+- **WHEN** pipeline 执行 knowledge 阶段
+- **THEN** 系统 SHALL 直接调用 `handle_knowledge(task, config)`

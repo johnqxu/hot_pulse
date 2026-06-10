@@ -1,38 +1,33 @@
 ## Purpose
 
-ZMQ PUSH/PULL 客户端，支持 Task 对象的发送和接收。
+ZMQ 基础设施（已弃用）。ZmqPublisher 和 ZmqConsumer 类已随 pipeline-executor 改动移除。仅 patrol_worker 内部仍使用 pyzmq 进行恢复任务的临时路由（计划后续迁移到 pipeline 直接调用）。
 
 ## Requirements
 
-### Requirement: ZMQ PUSH 客户端初始化
-系统 SHALL 提供 ZMQ 发布者客户端，创建 PUSH socket 并连接到可配置的 TCP 端点，支持发送 Task 对象。
+### Requirement: ZMQ 已废弃
 
-#### Scenario: 成功初始化
-- **WHEN** 使用有效的端点（如 "tcp://127.0.0.1:5551"）创建 ZMQ 发布者客户端
-- **THEN** 客户端 SHALL 创建 ZMQ PUSH socket 并连接到端点
-- **AND** 调用 send_task(task) 时 SHALL 将 Task 序列化为 JSON 并通过 socket 发送
+ZmqPublisher（ZMQ PUSH 客户端）和 ZmqConsumer（ZMQ PULL 消费者）类已从代码库中删除。monitor.py 和 ingest.py 不再通过 ZMQ 发送 Task，改为直接调用 `pipeline.run_subscription_pipeline()` 和 `pipeline.run_manual_pipeline()`。
 
-#### Scenario: 客户端关闭
-- **WHEN** 调用客户端的 close() 方法
-- **THEN** 客户端 SHALL 关闭 socket 并终止 ZMQ 上下文
+#### Scenario: monitor/ingest 不使用 ZMQ
+- **WHEN** monitor 发现新视频或 ingest 提交新内容
+- **THEN** 系统 SHALL 直接函数调用 pipeline，不经过 ZMQ PUSH
 
-### Requirement: ZMQ PULL 消费者
-系统 SHALL 提供 ZMQ 消费者客户端，创建 PULL socket 并绑定到 TCP 端点，支持接收 Task 对象，socket 设置 1 秒接收超时。
+#### Scenario: worker 不再常驻监听 ZMQ
+- **WHEN** 系统处理任务
+- **THEN** worker handler 由 pipeline._run_stages() 直接调用，不经过 ZMQ PULL 接收
 
-#### Scenario: 成功接收 Task
-- **WHEN** ZMQ PULL socket 收到 JSON 消息
-- **THEN** 系统 SHALL 通过 `Task.model_validate_json()` 反序列化为 Task 对象并返回
+### Requirement: patrol_worker 临时 ZMQ 路由
 
-#### Scenario: 接收超时
-- **WHEN** ZMQ PULL socket 在 RCVTIMEO（1 秒）内未收到消息
-- **THEN** recv_task() SHALL 抛出 `zmq.Again` 异常
+patrol_worker 内部仍使用 pyzmq 创建 PUSH socket，将恢复的 Task 路由到各 task_type 对应的端点。此用法为临时方案，计划在后续 change 中改为直接调用 `pipeline.run_subscription_pipeline(task, config, start_stage)`。
 
-#### Scenario: 消费者关闭
-- **WHEN** 调用消费者的 close() 方法
-- **THEN** 消费者 SHALL 关闭 socket 并终止 ZMQ 上下文
+#### Scenario: patrol ZMQ 路由（临时）
+- **WHEN** patrol_worker 检测到需要恢复的任务
+- **THEN** 系统 SHALL 通过 ZMQ PUSH 发送 Task（当前实现）
+- **AND** 后续 change 将改为直接调用 pipeline 函数
 
 ### Requirement: 按状态查询飞书记录
-系统 SHALL 提供 FeishuClient 方法，按飞书表格"状态"字段查询记录，返回 Task 对象列表。
+
+系统 SHALL 提供 FeishuClient 方法，按飞书表格"状态"字段查询记录，返回 Task 对象列表。此功能由 pipeline.recover_interrupted_tasks() 和 patrol_worker 共同使用。
 
 #### Scenario: 查询到匹配记录
 - **WHEN** 调用 query_records_by_status(status, task_type)

@@ -72,12 +72,7 @@
 - **THEN** 系统 SHALL 抛出超时异常
 
 ### Requirement: dingtalk_push worker CLI 入口
-系统 SHALL 提供独立的 CLI 入口点，支持直接运行 `python -m hot_pulse.dingtalk_worker`。
-
-#### Scenario: 直接运行 worker
-- **WHEN** 执行 `python -m hot_pulse.dingtalk_worker`
-- **THEN** 系统 SHALL 配置 loguru 日志输出到 stderr
-- **AND** 调用 `run_worker("dingtalk_push", handle_dingtalk_push)`
+`handle_dingtalk_push(task, config)` SHALL 作为纯函数，由 `pipeline._run_stages()` 在 dingtalk_push 阶段调用。
 
 ### Requirement: 钉钉消息格式
 系统 SHALL 构造符合钉钉 Webhook API 的 Markdown 消息格式。

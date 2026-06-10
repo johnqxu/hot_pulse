@@ -1,12 +1,18 @@
 """ingest CLI — 手动提交视频内容到 Hot Pulse 处理管道。
 
 用法:
-    python -m hot_pulse ingest \\
+    uv run hot-pulse-ingest \\
       --type video \\
       --platform bilibili \\
       --url "https://www.bilibili.com/video/BV1xxx" \\
       --title "可选标题" \\
       --notes "可选备注"
+
+    或等价用法:
+    uv run python -m hot_pulse ingest \\
+      --type video \\
+      --platform bilibili \\
+      --url "https://www.bilibili.com/video/BV1xxx"
 """
 
 from __future__ import annotations
@@ -111,7 +117,7 @@ def _build_task(
 
 
 # ---------------------------------------------------------------------------
-# ZMQ 推送
+# 飞书记录
 # ---------------------------------------------------------------------------
 
 

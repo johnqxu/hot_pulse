@@ -7,12 +7,12 @@
 ### Requirement: 统一任务数据模型
 系统 SHALL 提供 Task Pydantic Model 作为流水线各阶段间传递的统一消息信封，包含身份标识、源信息、阶段依赖/产出、状态等字段。
 
-#### Scenario: 从 ZMQ 消息反序列化
-- **WHEN** 从 ZMQ socket 接收到 JSON 字节流
+#### Scenario: 从 JSON 反序列化
+- **WHEN** 接收到 JSON 字节流（如从飞书记录构造 Task）
 - **THEN** 系统 SHALL 通过 `Task.model_validate_json()` 反序列化为 Task 对象
 
-#### Scenario: 序列化为 ZMQ 消息
-- **WHEN** 需要通过 ZMQ 发送 Task
+#### Scenario: 序列化为 JSON
+- **WHEN** 需要将 Task 序列化（如日志输出、飞书存储）
 - **THEN** 系统 SHALL 通过 `task.model_dump_json()` 序列化为 JSON 字节流
 
 ### Requirement: 阶段配置映射
@@ -32,7 +32,15 @@
 
 #### Scenario: analyze 阶段配置
 - **WHEN** task_type 为 "analyze"
-- **THEN** STAGE_MAPPING SHALL 包含 init_status="文字转写完成"、running_status="报告分析中"、finish_status="报告分析完成"、fail_status="报告分析失败"、start_field="内容分析开始时间"、end_field="内容分析结束时间"、output_map={"report_file": "分析报告地址"}、next_type=None
+- **THEN** STAGE_MAPPING SHALL 包含 init_status="文字转写完成"、running_status="报告分析中"、finish_status="报告分析完成"、fail_status="报告分析失败"、start_field="内容分析开始时间"、end_field="内容分析结束时间"、output_map={"report_file": "分析报告地址"}、next_type="dingtalk_push"
+
+#### Scenario: dingtalk_push 阶段配置
+- **WHEN** task_type 为 "dingtalk_push"
+- **THEN** STAGE_MAPPING SHALL 包含 init_status="报告分析完成"、running_status="报告推送中"、finish_status="报告推送完成"、fail_status="报告推送失败"、start_field="报告推送开始时间"、end_field="报告推送完成时间"、output_map={"push_status": "推送状态"}、next_type=None
+
+#### Scenario: knowledge 阶段配置
+- **WHEN** task_type 为 "knowledge"
+- **THEN** STAGE_MAPPING SHALL 包含 init_status="文字转写完成"、running_status="知识整理中"、finish_status="知识整理完成"、fail_status="知识整理失败"、start_field="知识整理开始时间"、end_field="知识整理完成时间"、output_map={"obsidian_note": "笔记文件地址"}、next_type=None
 
 ### Requirement: TaskManager 任务生命周期管理
 系统 SHALL 提供 TaskManager 封装任务在 start/finish/fail 状态流转时的飞书同步和日志输出。

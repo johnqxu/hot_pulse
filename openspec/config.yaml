@@ -8,7 +8,7 @@ context: |
   - Python 3.10+，包管理使用 uv
   - httpx（同步模式）：外部 HTTP 调用
   - pydantic / pydantic-settings：数据模型与配置校验
-  - pyzmq：ZMQ PUSH/PULL 流水线通信
+  - pyzmq：仅 patrol_worker 内部使用（计划移除）
   - loguru：日志
   - pyyaml + python-dotenv：配置加载
   - ffmpeg CLI（subprocess）：音频提取
@@ -17,12 +17,14 @@ context: |
   - 部署环境：本机 Windows 11
 
   ## 架构要点
-  - 流水线：monitor(临时进程,PUSH) → download(常驻,PULL/PUSH) → extract_audio → transcribe → analyze → dingtalk_push
-  - ZMQ 端口链：5551→5552→5553→5554→5555→5556
-  - 飞书多维表格 = 唯一持久化真相来源，ZMQ = 实时通知加速器
-  - Worker 基座：run_worker() 封装初始化/主循环/信号处理/启动恢复，具体 worker 只需提供 handler
+  - 单进程串行管道：pipeline.py 直接函数调用串联 worker handler，不再经过 ZMQ
+  - monitor/ingest 发现新内容后直接调用 pipeline 函数（run_subscription_pipeline / run_manual_pipeline）
+  - main.py = 单进程定时调度循环（monitor 定时 + 启动恢复），不再管理子进程
+  - 飞书多维表格 = 唯一持久化真相来源，pipeline 通过 TaskManager 管理状态流转
+  - Worker 不再作为独立常驻进程运行；handler 函数由 pipeline.py 直接调用
   - WorkerHandler 签名：(Task, AppConfig) -> dict[str, Any]
-  - Worker 启动时从飞书查询 init_status 记录，恢复历史未完成任务
+  - 启动恢复：pipeline.recover_interrupted_tasks() 从飞书查询非终端状态任务并恢复执行
+  - patrol_worker 仍作为独立进程运行定时巡检，内部使用 ZMQ（待迁移到 pipeline）
 
   ## 状态流转
   新视频 → 视频下载中 → 视频下载完成 → 音频提取中 → 音频提取完成 → 文字转写中 → 文字转写完成 → 报告分析中 → 报告分析完成 → 报告推送中 → 报告推送完成
@@ -37,30 +39,34 @@ context: |
   | transcribe    | 音频提取完成   | 文字转写中     | 文字转写完成   | 文字转写失败   | text_file    | analyze      |
   | analyze       | 文字转写完成   | 报告分析中     | 报告分析完成   | 报告分析失败   | report_file  | dingtalk_push|
   | dingtalk_push | 报告分析完成   | 报告推送中     | 报告推送完成   | 报告推送失败   | push_status  | None         |
+  | knowledge     | 文字转写完成   | 知识整理中     | 知识整理完成   | 知识整理失败   | obsidian_note| None         |
 
   ## 配置结构
-  - config.yaml（非敏感）：tikhub, feishu, creators, schedule, zeromq, download_worker, extract_audio_worker, transcribe_worker, analyze_worker, dingtalk_worker
-  - .env（敏感）：TIKHUB_API_KEY, FEISHU_APP_ID, FEISHU_APP_SECRET, ZHIPU_API_KEY, DINGTALK_SECRET
-  - 每个 WorkerConfig 继承 WorkerConfig 基类（pull_endpoint, push_endpoint），各自附加特有字段（download_dir/audio_dir/text_dir/report_dir 等）
+  - config.yaml（非敏感）：tikhub, feishu, creators, schedule, download_worker, extract_audio_worker, transcribe_worker, analyze_worker, knowledge_worker, dingtalk_worker, patrol_worker
+  - .env（敏感）：TIKHUB_API_KEY, FEISHU_APP_ID, FEISHU_APP_SECRET, OPENAI_API_KEY, DINGTALK_SECRET, DINGTALK_WEBHOOK_URL
+  - 各 WorkerConfig 为独立配置模型，仅包含该 worker 特有字段（download_dir/audio_dir/text_dir/report_dir 等），不再继承 ZMQ 端点基类
 
   ## 已实现模块
-  - monitor.py：监控+飞书写入+ZMQ 发送
-  - worker_base.py：通用 worker 主循环
-  - download_worker.py：视频下载（httpx 流式+URL 优先级排序）
-  - extract_audio_worker.py：ffmpeg 提取 MP3
-  - transcribe_worker.py：音频转文字（OpenVINO GPU + faster-whisper CPU 降级，本地模型缓存）
-  - analyze_worker.py：内容分析生成报告（智谱 GLM Coding Plan API）
-  - dingtalk_worker.py：钉钉群消息推送（Webhook 加签、流控）
+  - pipeline.py：串行管道编排器，直接调用 worker handler 函数，支持启动恢复
+  - monitor.py：监控+飞书写入+调用 run_subscription_pipeline
+  - ingest.py：手动提交 CLI + 调用 run_manual_pipeline
+  - main.py：单进程定时调度循环（monitor + 启动恢复）
+  - download_worker.py：视频下载 handler（httpx 流式+URL 优先级排序+yt-dlp 分流）
+  - extract_audio_worker.py：ffmpeg 提取 MP3 handler
+  - transcribe_worker.py：音频转文字 handler（OpenVINO GPU + faster-whisper CPU 降级，本地模型缓存）
+  - analyze_worker.py：内容分析生成报告 handler（OpenAI 兼容 API）
+  - knowledge_worker.py：知识笔记整理 handler（LLM → Obsidian vault）
+  - dingtalk_worker.py：钉钉群消息推送 handler（Webhook 加签、流控）
+  - patrol_worker.py：定时巡检，检测僵尸/失败任务并恢复（内部暂用 ZMQ，待迁移）
   - task.py：Task 数据模型
   - task_manager.py：TaskManager + STAGE_MAPPING
   - feishu.py：飞书 API 客户端
-  - zmq_client.py：ZMQ PUSH/PULL 客户端
   - config.py：配置模型与加载
 
   ## 外部服务
   - TikHub API：/api/v1/douyin/app/v3/fetch_user_post_videos（参数名 sec_user_id，视频列表字段 aweme_list，视频 ID 字段 aweme_id）
   - 飞书开放平台：多维表格 CRUD，"状态"字段类型为单选(type=3)
-  - 智谱 GLM Coding Plan API：https://open.bigmodel.cn/api/coding/paas/v4/chat/completions（OpenAI 兼容格式）
+  - OpenAI 兼容 LLM API（默认 DeepSeek）：analyze_worker + knowledge_worker 共用
   - 钉钉自定义机器人 Webhook：Markdown 消息推送，加签认证（HMAC-SHA256）
 
   ## 约定

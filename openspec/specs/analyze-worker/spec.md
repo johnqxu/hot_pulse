@@ -64,9 +64,10 @@ Analyze worker 负责接收文字转写完成的任务，调用 OpenAI 兼容的
 - **WHEN** LLM 响应首行不包含分隔符标记
 - **THEN** 系统 SHALL 使用视频标题截断至 10 个字符作为文件名摘要
 
-### Requirement: analyze worker 独立运行入口
-系统 SHALL 支持通过 `python -m hot_pulse.analyze_worker` 独立启动 analyze worker。
+### Requirement: Analyze Handler 调用方式
 
-#### Scenario: 以 CLI 方式运行
-- **WHEN** 用户执行 `python -m hot_pulse.analyze_worker`
-- **THEN** 系统 SHALL 调用 `run_worker("analyze", handle_analyze)`
+`handle_analyze(task, config)` SHALL 作为纯函数，由 `pipeline._run_stages()` 在 analyze 阶段调用。
+
+#### Scenario: 被 pipeline 调用
+- **WHEN** pipeline 执行 analyze 阶段
+- **THEN** 系统 SHALL 直接调用 `handle_analyze(task, config)`

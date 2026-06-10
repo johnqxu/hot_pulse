@@ -1,21 +1,22 @@
 ## Purpose
 
-视频下载 worker，从 ZMQ 接收 download 类型 Task，执行视频下载，更新飞书记录，向下游发送 extract_audio 类型 Task。
+视频下载 handler，由 `pipeline._run_stages()` 在 download 阶段调用，执行视频下载，返回 outputs 供 TaskManager 更新飞书记录并构建下一阶段 Task。
 
 ## Requirements
 
-### Requirement: Download Worker 主循环
-系统 SHALL 提供 download worker，通过 `run_worker("download", handle_download)` 启动，handler 负责视频下载逻辑。
+### Requirement: Download Handler
+
+系统 SHALL 提供 `handle_download(task, config)` handler 函数，由 `pipeline._run_stages()` 调用，负责视频下载逻辑。
 
 #### Scenario: 成功处理单个下载任务
-- **WHEN** run_worker 调用 handle_download handler
+- **WHEN** pipeline 调用 handle_download handler
 - **THEN** handler SHALL 从 task.inputs["play_urls"] 获取下载地址列表
 - **AND** 返回 outputs={"video_file": 本地文件路径}
-- **AND** run_worker 负责 start/finish/build_next/send 逻辑
+- **AND** pipeline 负责 start/finish/build_next 逻辑
 
-#### Scenario: Worker 优雅关闭
-- **WHEN** worker 进程收到中断信号（SIGINT/SIGTERM）
-- **THEN** run_worker SHALL 完成当前任务的处理后关闭 ZMQ 连接
+#### Scenario: Handler 执行失败
+- **WHEN** handler 执行过程中抛出异常
+- **THEN** pipeline SHALL 调用 TaskManager.fail() 标记失败并停止后续阶段
 
 ### Requirement: 视频下载处理
 系统 SHALL 提供 download worker 的 handler，从 Task.inputs 中获取 play_urls，按域名优先级排序后依次尝试下载视频。
@@ -53,9 +54,10 @@
 - **WHEN** 配置的下载目录不存在
 - **THEN** 系统 SHALL 自动创建目录
 
-### Requirement: Download Worker 独立运行入口
-系统 SHALL 支持通过 `python -m hot_pulse.download_worker` 独立启动 download worker。
+### Requirement: Download Handler 可独立调用
 
-#### Scenario: 以 CLI 方式运行
-- **WHEN** 用户执行 `python -m hot_pulse.download_worker`
-- **THEN** 系统 SHALL 调用 `run_worker("download", handle_download)`
+`handle_download(task, config)` SHALL 作为纯函数，支持被 pipeline 调用或测试中独立调用。
+
+#### Scenario: 被 pipeline 调用
+- **WHEN** pipeline 执行 download 阶段
+- **THEN** 系统 SHALL 直接调用 `handle_download(task, config)`

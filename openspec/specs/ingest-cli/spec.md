@@ -46,9 +46,9 @@
 - **WHEN** ingest 提交视频
 - **THEN** 飞书记录 SHALL 包含 `博主=uploader`、`来源=manual`、`视频链接=原分享链接`、`平台=platform`
 
-### Requirement: Task 构造与 ZMQ 推送
+### Requirement: Task 构造与管道执行
 
-系统 SHALL 构造 `Task(source="manual")` 并通过 ZMQ PUSH 推送到 `config.zeromq.push_endpoint`（5551，对接 download_worker）。
+系统 SHALL 构造 `Task(source="manual")` 并同步调用 `run_manual_pipeline(task, config)` 执行完整处理管道。
 
 #### Scenario: 构造 Task
 - **WHEN** 所有参数就绪
@@ -56,10 +56,15 @@
 - **AND** `creator` SHALL 为 yt-dlp 解析出的 uploader
 
 #### Scenario: 下载分流
-- **WHEN** Task 到达 download_worker 且 `source="manual"`
-- **THEN** download_worker SHALL 使用 yt-dlp 下载（合并音视频），而非 httpx 直链
+- **WHEN** Task 到达 download handler 且 `source="manual"`
+- **THEN** download handler SHALL 使用 yt-dlp 下载（合并音视频），而非 httpx 直链
 
-#### Scenario: ZMQ 推送成功
-- **WHEN** Task 构造完成并 ZMQ 推送成功
-- **THEN** 系统 SHALL 在 stdout 输出 `{"task_id": "<uuid>", "status": "submitted"}`
-- **AND** 以退出码 0 退出
+#### Scenario: 管道执行成功
+- **WHEN** Task 构造完成并 `run_manual_pipeline(task, config)` 执行成功
+- **THEN** 系统 SHALL 以退出码 0 退出
+- **AND** 日志中输出 pipeline 各阶段执行结果
+
+#### Scenario: 管道执行失败
+- **WHEN** pipeline 某个阶段执行失败
+- **THEN** 系统 SHALL 以非零退出码退出
+- **AND** 失败信息由 TaskManager 记录到飞书记录

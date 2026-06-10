@@ -1,83 +1,51 @@
 ## Purpose
 
-通用 worker 基座，封装所有 worker 共有的初始化、主循环、信号处理和资源清理逻辑。
+Worker handler 函数协议与日志规范。worker 不再作为独立常驻进程运行；handler 函数由 `pipeline.py` 直接调用。`worker_base.py`（原 `run_worker()` 通用主循环）已删除。
 
 ## Requirements
 
-### Requirement: run_worker 通用主循环
-系统 SHALL 提供 `run_worker()` 函数，封装所有 worker 共有的初始化和主循环逻辑，通过 handler 回调执行具体业务，主循环处理 ZMQ 接收超时以支持 Windows 下优雅关闭。
-
-#### Scenario: 成功处理单个任务
-- **WHEN** 调用 `run_worker(task_type, handler, config_path)`
-- **THEN** 系统 SHALL 加载配置，初始化 FeishuClient、TaskManager、ZmqConsumer（pull）、ZmqPublisher（push）
-- **AND** 进入主循环，从 ZMQ PULL 接收 Task
-- **AND** 若 task_type 匹配，调用 `tm.start(task)`
-- **AND** 调用 `handler(task, config)` 获取 outputs dict
-- **AND** 调用 `tm.finish(task, outputs)`
-- **AND** 调用 `tm.build_next(task)`，若非 None 则通过 ZMQ PUSH 发送
-
-#### Scenario: handler 抛出异常
-- **WHEN** handler 执行过程中抛出异常
-- **THEN** 系统 SHALL 调用 `tm.fail(task, error_message)`
-- **AND** 继续处理下一个 Task
-
-#### Scenario: 收到非目标类型的 Task
-- **WHEN** 收到的 Task 的 task_type 与 run_worker 注册的 task_type 不匹配
-- **THEN** 系统 SHALL 记录警告日志并跳过该 Task
-
-#### Scenario: ZMQ 接收超时
-- **WHEN** recv_task() 因超时抛出 zmq.Again
-- **THEN** 系统 SHALL 检查 shutting_down 标志
-- **AND** 若未关闭则继续循环等待
-- **AND** 若正在关闭则退出循环
-
-#### Scenario: Worker 优雅关闭
-- **WHEN** worker 进程收到 SIGINT 或 SIGTERM 信号
-- **THEN** 系统 SHALL 设置关闭标志，当前 recv_task 最多等 1 秒后超时返回
-- **AND** 在 finally 中关闭 ZMQ Consumer、Publisher 和 FeishuClient
-
-#### Scenario: 启动时恢复历史任务
-- **WHEN** run_worker 启动后进入 ZMQ 主循环之前
-- **THEN** 系统 SHALL 根据当前 task_type 的 init_status 查询飞书表格
-- **AND** 将查询到的每条记录构造为 Task 对象
-- **AND** 逐条调用 handler 处理，通过 TaskManager 管理 start/finish/fail
-- **AND** 处理完成后才进入 ZMQ 主循环
-
-#### Scenario: 无历史任务
-- **WHEN** 启动时飞书表格中没有 init_status 对应的记录
-- **THEN** 系统 SHALL 直接进入 ZMQ 主循环
-
-#### Scenario: dingtalk_push task_type 配置映射
-- **WHEN** `_get_worker_config()` 收到 task_type="dingtalk_push"
-- **THEN** 系统 SHALL 返回 `config.dingtalk_worker` 配置对象
-
 ### Requirement: WorkerHandler 协议
-系统 SHALL 定义 WorkerHandler 类型协议，签名为 `(Task, AppConfig) -> dict`，每个具体 worker 提供一个符合此签名的 handler 函数。
+
+系统 SHALL 定义 WorkerHandler 类型协议，签名为 `(Task, AppConfig) -> dict`。每个具体 worker 模块提供一个符合此签名的 handler 函数，由 `pipeline._run_stages()` 直接调用。
 
 #### Scenario: handler 返回 outputs dict
 - **WHEN** handler 成功执行完毕
 - **THEN** handler SHALL 返回 dict 类型的 outputs，包含当前阶段的产出物
+- **AND** TaskManager 将 outputs 写入飞书记录，并用于构建下一阶段 Task
 
 #### Scenario: handler 抛出异常表示失败
 - **WHEN** handler 执行过程中遇到错误
 - **THEN** handler SHALL 抛出异常，异常消息作为任务失败原因
+- **AND** pipeline SHALL 调用 `TaskManager.fail()` 标记失败并停止后续阶段
 
-### Requirement: WorkerConfig 基类
-系统 SHALL 提供 WorkerConfig 基类，包含 pull_endpoint 和 push_endpoint 字段，各具体 worker 配置继承此基类。
+### Requirement: Pipeline 编排调用
 
-#### Scenario: WorkerConfig 包含必要字段
-- **WHEN** 定义具体 worker 的配置类
-- **THEN** 该配置类 SHALL 继承 WorkerConfig，自动包含 pull_endpoint 和 push_endpoint
-- **AND** 可添加该 worker 特有的配置字段
+系统 SHALL 通过 `pipeline._run_stages()` 按阶段顺序调用 handler，管理 TaskManager 生命周期（start → handler → finish → build_next）。
+
+#### Scenario: 成功处理单个阶段
+- **WHEN** pipeline 执行某个阶段
+- **THEN** 系统 SHALL 调用 `tm.start(task)` 更新飞书状态为 running_status
+- **AND** 调用 `handler(task, config)` 执行业务逻辑
+- **AND** 调用 `tm.finish(task, outputs)` 更新飞书状态为 finish_status
+- **AND** 调用 `tm.build_next(task)` 构建下一阶段 Task
+
+#### Scenario: 阶段失败停止
+- **WHEN** handler 抛出异常
+- **THEN** pipeline SHALL 调用 `tm.fail(task, error_message)`
+- **AND** 不再执行后续阶段
+
+#### Scenario: 最后一个阶段
+- **WHEN** tm.build_next(task) 返回 None（无下一阶段）
+- **THEN** pipeline SHALL 停止执行
 
 ### Requirement: Worker 日志标识
 
-每个 worker 子进程 SHALL 使用带颜色的进程标识前缀输出日志。不同 task_type 对应不同颜色：download=青色、extract_audio=黄色、transcribe=蓝色、analyze=洋红、dingtalk_push=红色。
+各 handler 模块 SHALL 使用带颜色的进程标识前缀输出日志。不同 task_type 对应不同颜色：download=青色、extract_audio=黄色、transcribe=蓝色、analyze=洋红、dingtalk_push=红色、knowledge=灰色、patrol=浅黑。
 
-#### Scenario: Worker 启动日志
-- **WHEN** worker 子进程启动
+#### Scenario: Handler 执行日志
+- **WHEN** pipeline 调用 handler 执行
 - **THEN** 日志格式为 `{time} | {level} | <color>[task_type]</color> {message}`，颜色按 task_type 映射
 
-#### Scenario: 独立运行 worker
-- **WHEN** 通过 `python -m hot_pulse.xxx_worker` 独立启动
-- **THEN** 日志同样使用对应颜色的 `[task_type]` 前缀
+#### Scenario: 独立运行
+- **WHEN** 通过 `python -m hot_pulse.monitor` 或其他模块独立启动
+- **THEN** 日志同样使用对应颜色的前缀
