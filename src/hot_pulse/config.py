@@ -35,23 +35,23 @@ class ScheduleConfig(BaseModel):
 
 
 class DownloadWorkerConfig(BaseModel):
-    download_dir: str = r"D:\batch\video"
+    download_dir: str = "/home/user/hot-pulse/data/video"
     url_priority: dict[str, int] = {}
 
 
 class ExtractAudioWorkerConfig(BaseModel):
-    audio_dir: str = r"D:\batch\audio"
+    audio_dir: str = "/home/user/hot-pulse/data/audio"
 
 
 class TranscribeWorkerConfig(BaseModel):
-    text_dir: str = r"D:\batch\text"
-    model_dir: str = r"D:\batch\whisper-model"
+    text_dir: str = "/home/user/hot-pulse/data/text"
+    model_dir: str = "/home/user/hot-pulse/models/whisper"
     model_size: str = "medium"
     device: str = "cpu"
 
 
 class AnalyzeWorkerConfig(BaseModel):
-    report_dir: str = r"D:\batch\report"
+    report_dir: str = "/home/user/hot-pulse/data/reports"
     model: str = "deepseek-v4-flash"
     prompt: str = ""
     openai_base_url: str = "https://api.deepseek.com/v1"
@@ -60,7 +60,7 @@ class AnalyzeWorkerConfig(BaseModel):
 
 
 class KnowledgeWorkerConfig(BaseModel):
-    obsidian_vault: str = r"D:\docs\Obsidian"
+    obsidian_vault: str = "/home/user/hot-pulse/data/obsidian"
     model: str = ""      # 空则复用 analyze_worker.model
     prompt: str = ""     # 空则用内置默认
 

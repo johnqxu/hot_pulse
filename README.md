@@ -164,17 +164,17 @@ tikhub:
 
 # 各 worker 的 ZMQ 端点和专属配置
 download_worker:
-  download_dir: "D:\\batch\\video"
+  download_dir: "/home/user/hot-pulse/data/video"
 
 transcribe_worker:
-  model_dir: "D:\\batch\\whisper-model"
+  model_dir: "/home/user/hot-pulse/models/whisper"
   model_size: "medium"
   device: "gpu"  # gpu(Intel) 或 cpu
 
 analyze_worker:
   model: "deepseek-v4-flash"
   openai_base_url: "https://api.deepseek.com/v1"
-  report_dir: "D:\\docs\\财经\\02-市场分析\\视频分析报告"
+  report_dir: "/home/user/hot-pulse/data/reports"
 
 dingtalk_worker:
   webhook_url: "https://oapi.dingtalk.com/robot/send?access_token=..."
