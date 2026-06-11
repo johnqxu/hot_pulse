@@ -36,15 +36,6 @@ from hot_pulse.pipeline import run_manual_pipeline
 # 微信视频号链接解析
 # ---------------------------------------------------------------------------
 
-_WX_SPH_RE = __import__("re").compile(r"sph/([A-Za-z0-9]+)")
-
-
-def _extract_weixin_export_id(url: str) -> str:
-    """从微信视频号 sph 分享链接中提取 exportId。"""
-    m = _WX_SPH_RE.search(url)
-    if not m:
-        raise RuntimeError(f"无法从链接提取微信视频号 exportId: {url}")
-    return m.group(1)
 
 
 # ---------------------------------------------------------------------------
@@ -160,7 +151,7 @@ def _create_feishu_record(
 def main() -> None:
     parser = argparse.ArgumentParser(description="手动提交视频内容到 Hot Pulse 处理管道")
     parser.add_argument("--type", required=True, choices=["video"])
-    parser.add_argument("--platform", required=True, choices=["bilibili", "weixin"])
+    parser.add_argument("--platform", required=True, choices=["bilibili"])
     parser.add_argument("--url", required=True, help="视频分享链接")
     parser.add_argument("--title", default="", help="可选标题")
     parser.add_argument("--notes", default="", help="可选备注")
@@ -172,23 +163,8 @@ def main() -> None:
         print(f"配置加载失败: {e}", file=sys.stderr)
         sys.exit(1)
 
-    # 1. 按 platform 解析元信息
-    weixin_fields: dict = {}
-    if args.platform == "weixin":
-        from hot_pulse.tikhub import TikHubClient
-        tikhub = TikHubClient(config)
-        detail = tikhub.fetch_weixin_video_detail(_extract_weixin_export_id(args.url))
-        video_id = detail["video_id"]
-        yt_title = detail["title"]
-        uploader = detail["uploader"]
-        weixin_fields = {
-            "encrypted_url": detail["encrypted_url"],
-            "url_token": detail["url_token"],
-            "decode_key": detail["decode_key"],
-        }
-        tikhub.close()
-    else:
-        video_id, yt_title, uploader = _resolve_url(args.url)
+    # 1. 解析元信息
+    video_id, yt_title, uploader = _resolve_url(args.url)
     title = args.title or yt_title
 
     # 2. 飞书记录
@@ -209,7 +185,6 @@ def main() -> None:
         "play_urls": [args.url],
         "notes": args.notes or "",
     }
-    task_inputs.update(weixin_fields)
     task = _build_task(
         platform=args.platform,
         video_id=video_id,
@@ -219,8 +194,6 @@ def main() -> None:
         notes=args.notes,
         feishu_record_id=feishu_record_id,
     )
-    # 注入 weixin 专属字段
-    task.inputs.update(weixin_fields)
 
     # 4. 串行执行管道: download → extract → transcribe → knowledge
     run_manual_pipeline(task, config)
