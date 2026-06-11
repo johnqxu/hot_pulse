@@ -55,7 +55,7 @@ sudo usermod -a -G render $USER
 **验证 OpenVINO 能否识别 GPU：**
 
 ```bash
-uv run python -c "from openvino.runtime import Core; print('可用设备:', Core().available_devices)"
+uv run python -c "from openvino import Core; print('可用设备:', Core().available_devices)"
 ```
 
 期望输出包含 `GPU`：`可用设备: ['CPU', 'GPU']`。
@@ -70,6 +70,22 @@ uv run python -c "from openvino.runtime import Core; print('可用设备:', Core
 | 启动日志出现 "GPU 模型加载失败" | 加载出错，自动降级 CPU | 查看 `loguru` 输出的 warning 详情 |
 
 **降级机制：** 代码在 `transcribe_worker.py` 中实现了双重降级——模型初始化失败或推理失败时，会自动回退到 CPU 的 `faster-whisper`，不会报错中断。
+
+**导出 GPU 模型（首次使用）：**
+
+GPU 推理需要将 Whisper 模型导出为 OpenVINO IR 格式。首次使用前运行：
+
+```bash
+# 快速验证（tiny 模型，30 秒内完成）
+uv run python scripts/test_gpu_whisper.py
+
+# 导出 medium 模型（~5-15 分钟，之后转写质量更高）
+uv run python scripts/test_gpu_whisper.py --model medium
+```
+
+导出后的 IR 模型缓存在 `batch/whisper-model/` 目录，后续启动会自动加载。
+
+> **注意**: 如果重建虚拟环境（`uv sync`），需要重新应用 optimum Python 3.14 兼容补丁，`transcribe_worker.py` 会在模块加载时自动完成。
 
 ### 2. 配置
 

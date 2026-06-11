@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
@@ -8,6 +9,20 @@ from loguru import logger
 
 from hot_pulse.config import AppConfig
 from hot_pulse.task import Task
+
+# Python 3.14 兼容：functools.partial.__get__ 破坏了 optimum 的类属性访问
+# 必须在任何 optimum import 之前应用此补丁
+for _p in sys.path:
+    if not _p:
+        continue
+    for _rel in ("optimum/exporters/base.py", "optimum/exporters/openvino/model_configs.py"):
+        _fp = Path(_p) / _rel
+        if _fp.exists():
+            _content = _fp.read_text(encoding="utf-8")
+            _old = "self.NORMALIZED_CONFIG_CLASS(self._config)"
+            _new = "type(self).NORMALIZED_CONFIG_CLASS(self._config)"
+            if _old in _content:
+                _fp.write_text(_content.replace(_old, _new), encoding="utf-8")
 
 _model: TranscribeModel | None = None
 
@@ -30,7 +45,14 @@ class TranscribeModel(Protocol):
 # ---------------------------------------------------------------------------
 
 class OVWhisperModel:
-    """使用 OpenVINO + optimum-intel 在 Intel GPU 上运行 Whisper。"""
+    """使用 OpenVINO + optimum-intel 在 Intel GPU 上运行 Whisper。
+
+    通过 model.generate() 进行推理，利用 KV 缓存加速自回归解码。
+    首次运行时自动导出 OpenVINO IR 模型并缓存到本地。
+    """
+
+    # 30 秒窗口 = 480,000 采样点 @ 16kHz
+    _CHUNK_SAMPLES = 30 * 16000
 
     def __init__(self, model_size: str, model_dir: str) -> None:
         from optimum.intel import OVModelForSpeechSeq2Seq
@@ -39,54 +61,41 @@ class OVWhisperModel:
         model_id = f"openai/whisper-{model_size}"
         local_path = Path(model_dir) / model_size
 
-        # 始终从 HuggingFace 加载 processor（体积小，无需缓存）
+        # 始终从 HuggingFace 加载 processor（tokenizer + feature extractor，体积小）
         self._processor = WhisperProcessor.from_pretrained(model_id)
+        self._model_id = model_id
 
-        # 检查本地是否已有导出过的 OpenVINO 模型
+        # 检查本地是否已有导出过的 OpenVINO IR 模型
         if (local_path / "openvino_encoder_model.xml").exists():
-            logger.info("从本地缓存加载 OpenVINO 模型: {}", local_path)
+            logger.info("从本地缓存加载 OpenVINO IR 模型: {}", local_path)
             self._model = OVModelForSpeechSeq2Seq.from_pretrained(
                 str(local_path),
                 export=False,
                 compile=True,
                 device="GPU",
-                ov_config={"PERFORMANCE_HINT": "CUMULATIVE_THROUGHPUT"},
+                ov_config={"PERFORMANCE_HINT": "LATENCY"},
             )
         else:
-            logger.info("首次加载，导出 OpenVINO 模型: {} → {}", model_id, local_path)
+            logger.info("首次加载，导出 OpenVINO IR 模型: {} → {}", model_id, local_path)
             self._model = OVModelForSpeechSeq2Seq.from_pretrained(
                 model_id,
                 export=True,
                 compile=True,
                 device="GPU",
-                ov_config={"PERFORMANCE_HINT": "CUMULATIVE_THROUGHPUT"},
+                ov_config={"PERFORMANCE_HINT": "LATENCY"},
             )
             local_path.mkdir(parents=True, exist_ok=True)
             self._model.save_pretrained(str(local_path))
-            logger.info("OpenVINO 模型已缓存到: {}", local_path)
-
-        # Pre-cache special token IDs
-        tok = self._processor.tokenizer
-        self._sot = tok.convert_tokens_to_ids("<|startoftranscript|>")
-        self._zh = tok.convert_tokens_to_ids("<|zh|>")
-        self._transcribe_tok = tok.convert_tokens_to_ids("<|transcribe|>")
-        self._notimestamps = tok.convert_tokens_to_ids("<|notimestamps|>")
-        self._eos = tok.eos_token_id
+            logger.info("OpenVINO IR 模型已缓存到: {}", local_path)
 
         logger.info("OVWhisperModel 加载成功: model={}, device=GPU", model_id)
 
-    # 30 秒窗口 = 480,000 采样点 @ 16kHz
-    _CHUNK_SAMPLES = 30 * 16000
-
     def transcribe(self, audio_path: str) -> tuple[str, float]:
-        import numpy as np
-
         audio = self._load_audio(audio_path)
         duration = len(audio) / 16000.0
 
         total_samples = len(audio)
         if total_samples <= self._CHUNK_SAMPLES:
-            # 短音频：单次推理
             text = self._transcribe_chunk(audio)
             return text, duration
 
@@ -106,31 +115,37 @@ class OVWhisperModel:
         return "\n".join(texts), duration
 
     def _transcribe_chunk(self, audio_chunk) -> str:
-        """对单个音频片段执行 encoder-decoder greedy decode。"""
+        """对单个音频片段使用 model.generate() 执行推理。
+
+        相比较手动逐 token 调用 encoder/decoder:
+        - generate() 内置 KV 缓存，避免重复计算历史 token 的 attention
+        - 时间复杂度从 O(n²) 降到 O(n)
+        """
         import numpy as np
+        import torch
 
         input_features = self._processor.feature_extractor(
-            audio_chunk, sampling_rate=16000, return_tensors="np",
+            audio_chunk, sampling_rate=16000, return_tensors="pt",
         ).input_features
 
-        encoder_out = self._model.encoder(input_features=input_features)
-        hidden_states = encoder_out.last_hidden_state
+        # model.generate() 需要 input_features 作为 inputs
+        generated = self._model.generate(
+            input_features,
+            language="zh",
+            task="transcribe",
+            return_timestamps=False,
+            max_new_tokens=444,
+        )
 
-        max_tokens = 448
-        tokens = [self._sot, self._zh, self._transcribe_tok, self._notimestamps]
+        # generated 可能是 torch.Tensor 或 numpy array
+        if isinstance(generated, torch.Tensor):
+            generated = generated.cpu().numpy()
+        elif not isinstance(generated, np.ndarray):
+            generated = np.array(generated)
 
-        for _ in range(max_tokens):
-            decoder_input = np.array([tokens], dtype=np.int64)
-            decoder_out = self._model.decoder(
-                input_ids=decoder_input,
-                encoder_hidden_states=hidden_states,
-            )
-            next_token = int(np.argmax(decoder_out.logits[0, -1]))
-            if next_token == self._eos:
-                break
-            tokens.append(next_token)
-
-        return self._processor.tokenizer.decode(tokens, skip_special_tokens=True)
+        return self._processor.tokenizer.decode(
+            generated[0], skip_special_tokens=True,
+        )
 
     @staticmethod
     def _load_audio(path: str):
